@@ -1,3 +1,12 @@
+"""
+Creates a Spark session with Iceberg support.
+Creates the local.db namespace.
+Loads dimension tables from CSV.
+Loads fact tables.
+Partitions fact tables by day.
+Writes data into Iceberg tables.
+"""
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import days
 from pyspark.sql.functions import col, month, year
