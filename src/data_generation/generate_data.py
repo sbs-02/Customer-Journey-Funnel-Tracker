@@ -1,3 +1,11 @@
+"""
+Generates reproducible synthetic data for the customer journey project.
+Creates dimension tables (Date, Customer, Channel, Product).
+Simulates customer funnel events (Visit → Lead → Opportunity).
+Generates orders from successful funnel conversions.
+Writes all dimension and fact tables as CSV files to data/raw.
+"""
+
 import csv, random, datetime as dt
 from pathlib import Path
 from faker import Faker
