@@ -1,0 +1,18 @@
+[project]
+name = "customer-journey-funnel-tracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12.10"
+dependencies = [
+    "faker>=40.28.1",
+    "fastapi>=0.139.0",
+    "ollama>=0.6.2",
+    "pandas>=3.0.3",
+    "psycopg2-binary>=2.9.12",
+    "pyiceberg[duckdb,pyarrow]==0.8.*",
+    "pyspark==4.1.2",
+    "python-dotenv>=1.2.2",
+    "sqlalchemy>=2.0.51",
+    "uvicorn>=0.50.2",
+]

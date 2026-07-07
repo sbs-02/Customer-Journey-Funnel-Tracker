@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+.eggs/
+
+# Environment
+.env
+.env.*
+*.env
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# Data files
+*.csv
+*.parquet
+*.avro
+data/raw/
+data/powerbi/
+warehouse/
+
+# Power BI
+*.pbix
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/settings.json
+.idea/
