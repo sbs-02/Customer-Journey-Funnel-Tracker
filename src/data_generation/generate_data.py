@@ -11,7 +11,7 @@ from pathlib import Path
 from faker import Faker
 
 fake = Faker()
-random.seed(42)                       # reproducible run-to-run
+random.seed(42)                       # same "random" data every run — reproducible
 OUT = Path("data/raw"); OUT.mkdir(parents=True, exist_ok=True)
 
 CHANNELS = ["Paid Search", "Email", "Organic", "Social"]
