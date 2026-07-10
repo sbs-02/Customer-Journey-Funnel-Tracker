@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # B2B SaaS company - Selling tiered software subscriptions 
 (Starter/Pro/Enterprise)
 
@@ -20,3 +21,8 @@ Paid Search - Customer clicked a paid ad on a search engine (Google Ads, Bing Ad
 Email - Customer came from a marketing email / newsletter link,
 Organic - Customer found you via unpaid search engine results (SEO),
 Social - Customer came from a social media post or ad (LinkedIn, Twitter/X, etc.)
+=======
+# B2B SaaS company - selling tiered software subscriptions 
+(Starter/Pro/Enterprise)
+
+>>>>>>> 42bd5f24786a04c805af43659e9e286764e28c9c
