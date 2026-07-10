@@ -37,7 +37,7 @@ spark.sql("""
 """)
 print("Successfully updated partition layout metadata from daily to monthly.")
 
-# Load the new batch file, ensuring timestamps are cast properly (just like Step 8)
+# Load the new batch file, ensuring timestamps are cast properly
 try:
     new_batch_raw = load_csv("fact_funnel_event_new")
     new_batch = new_batch_raw.withColumn("event_ts", new_batch_raw["event_ts"].cast("timestamp"))
