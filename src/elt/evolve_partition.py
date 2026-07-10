@@ -27,7 +27,7 @@ spark = (SparkSession.builder
 def load_csv(name):
     return spark.read.option("header", True).option("inferSchema", True).csv(f"data/raw/{name}.csv")
 
-print("--- Step 10: Executing Partition Evolution ---")
+print("--- Executing Partition Evolution ---")
 
 # Alter the table layout in metadata to evolve from days to months
 # This operation is instant and doesn't touch old data files.
