@@ -8,7 +8,6 @@ Writes data into Iceberg tables.
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import days
 from pyspark.sql.functions import col, month, year
 from pyspark.sql.functions.partitioning import days
 
