@@ -19,4 +19,4 @@ Classic B2B sales motion
 Paid Search - Customer clicked a paid ad on a search engine (Google Ads, Bing Ads),
 Email - Customer came from a marketing email / newsletter link,
 Organic - Customer found you via unpaid search engine results (SEO),
-Social - Customer came from a social media post or ad (LinkedIn, Twitter/X, etc.)
+Social - Customer came from a social media post or ad (LinkedIn, Twitter/X, etc).
