@@ -27,7 +27,7 @@ spark = (SparkSession.builder
 def load_csv(name):
     return spark.read.option("header", True).option("inferSchema", True).csv(f"data/raw/{name}.csv")
 
-print("--- Step 10: Executing Partition Evolution ---")
+print("--- Executing Partition Evolution ---")
 
 # Alter the table layout in metadata to evolve from days to months
 # This operation is instant and doesn't touch old data files.
@@ -37,7 +37,7 @@ spark.sql("""
 """)
 print("Successfully updated partition layout metadata from daily to monthly.")
 
-# Load the new batch file, ensuring timestamps are cast properly (just like Step 8)
+# Load the new batch file, ensuring timestamps are cast properly
 try:
     new_batch_raw = load_csv("fact_funnel_event_new")
     new_batch = new_batch_raw.withColumn("event_ts", new_batch_raw["event_ts"].cast("timestamp"))
