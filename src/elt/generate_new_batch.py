@@ -1,5 +1,5 @@
 """
-Generates the simulated incremental batch of new funnel events for Step 10.
+Generates the simulated incremental batch of new funnel events.
 Writes data to data/raw/fact_funnel_event_new.csv
 """
 import csv
