@@ -1,3 +1,14 @@
+"""
+Generates synthetic sales and marketing data.
+Creates a data/raw directory if it does not exist.
+Generates date, customer, channel, and product dimension tables.
+Simulates customer funnel events (visit → lead → opportunity).
+Simulates customer orders based on conversion probabilities.
+Writes all dimension and fact tables as CSV files.
+Uses a fixed random seed for reproducible datasets.
+Prints the total number of generated events and orders.
+"""
+
 import csv, random, datetime as dt
 from pathlib import Path
 from faker import Faker
