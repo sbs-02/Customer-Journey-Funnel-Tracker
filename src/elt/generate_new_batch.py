@@ -12,6 +12,8 @@ from pathlib import Path
 OUT = Path("data/raw")
 OUT.mkdir(parents=True, exist_ok=True)
 
+random.seed(43)   # fixed seed (distinct from generate_data.py's 42) for reproducible incremental batches
+
 # Re-use project parameters from your main data generator
 CHANNELS = ["Paid Search", "Email", "Organic", "Social"]
 LEAD_RATE = {"Paid Search": .18, "Email": .30, "Organic": .22, "Social": .12}
