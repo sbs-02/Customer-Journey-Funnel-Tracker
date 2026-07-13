@@ -1,16 +1,22 @@
 """
 Creates a Spark session with Iceberg support.
 Creates the local.db namespace.
-Loads dimension tables from CSV.
+Loads dimension tables from CSV using explicit schemas (schemas.py).
 Loads fact tables.
 Partitions fact tables by day.
 Writes data into Iceberg tables.
 """
 
 import os
+import sys
+from pathlib import Path
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, month, year
 from pyspark.sql.functions.partitioning import days
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from data_generation.schemas import DIM_SCHEMAS, FACT_SCHEMAS
 
 WAREHOUSE = os.environ.get(
     "ICEBERG_WAREHOUSE",
@@ -29,19 +35,20 @@ spark = (SparkSession.builder
 
 spark.sql("CREATE NAMESPACE IF NOT EXISTS local.db")
 
-def load_csv(name):
-    return spark.read.option("header", True).option("inferSchema", True).csv(f"data/raw/{name}.csv")
+def load_csv(name, schema):
+    return spark.read.option("header", True).schema(schema).csv(f"data/raw/{name}.csv")
 
-for dim in ["dim_date", "dim_customer", "dim_channel", "dim_product"]:
-    load_csv(dim).writeTo(f"local.db.{dim}").createOrReplace()
+for dim, schema in DIM_SCHEMAS.items():
+    load_csv(dim, schema).writeTo(f"local.db.{dim}").createOrReplace()
 
 def load_fact_by_month(name, ts_col):
-    df = load_csv(name)
+    schema = FACT_SCHEMAS[name]
+    df = load_csv(name, schema)
     df = df.withColumn(ts_col, col(ts_col).cast("timestamp"))
-    
+
     years_months = df.select(year(ts_col).alias("y"), month(ts_col).alias("m")) \
                      .distinct().orderBy("y", "m").collect()
-    
+
     first = True
     for row in years_months:
         chunk = df.filter(
