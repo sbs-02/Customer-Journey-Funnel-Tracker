@@ -7,11 +7,15 @@ Partitions fact tables by day.
 Writes data into Iceberg tables.
 """
 
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, month, year
 from pyspark.sql.functions.partitioning import days
 
-WAREHOUSE = "/customer-journey-funnel-tracker/warehouse"   # where Iceberg's files live on disk
+WAREHOUSE = os.environ.get(
+    "ICEBERG_WAREHOUSE",
+    os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
+)
 
 spark = (SparkSession.builder
     .appName("iceberg-load")
