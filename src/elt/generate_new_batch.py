@@ -19,7 +19,7 @@ OPP_RATE = .30
 NEW_START = dt.date(2026, 1, 1)
 NEW_END = dt.date(2026, 1, 5)  # Let's generate a few days of new data
 
-print(f"--- Generating new event batch data for Step 10 ---")
+print(f"--- Generating new event batch data ---")
 
 with open(OUT / "fact_funnel_event_new.csv", "w", newline="") as f:
     w = csv.writer(f)
