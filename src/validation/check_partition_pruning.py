@@ -7,9 +7,13 @@ Compares Spark query plans for:
 The output is saved as evidence that Iceberg skips unnecessary files.
 """
 
+import os
 from pyspark.sql import SparkSession
 
-WAREHOUSE = "/customer-journey-funnel-tracker/warehouse"
+WAREHOUSE = os.environ.get(
+    "ICEBERG_WAREHOUSE",
+    os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
+)
 
 spark = (
     SparkSession.builder
