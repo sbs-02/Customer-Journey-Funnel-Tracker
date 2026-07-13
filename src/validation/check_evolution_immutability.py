@@ -36,3 +36,4 @@ spark.table("local.db.fact_funnel_event") \
     .explain(True)
 
 spark.stop()
+""").show(200, truncate=False)
