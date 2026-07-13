@@ -12,7 +12,10 @@ Prints the status of the partition evolution and data append operations.
 import os
 from pyspark.sql import SparkSession
 
-WAREHOUSE = "/customer-journey-funnel-tracker/warehouse" 
+WAREHOUSE = os.environ.get(
+    "ICEBERG_WAREHOUSE",
+    os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
+)
 
 spark = (SparkSession.builder
     .appName("iceberg-partition-evolution")
