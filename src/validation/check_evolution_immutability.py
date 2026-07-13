@@ -1,7 +1,10 @@
 from pyspark.sql import SparkSession
 import os
 
-WAREHOUSE = os.environ.get("ICEBERG_WAREHOUSE", "warehouse")
+WAREHOUSE = os.environ.get(
+    "ICEBERG_WAREHOUSE",
+    os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
+)
 
 spark = (SparkSession.builder
     .appName("evolution-immutability-check")
@@ -36,4 +39,3 @@ spark.table("local.db.fact_funnel_event") \
     .explain(True)
 
 spark.stop()
-""").show(200, truncate=False)
