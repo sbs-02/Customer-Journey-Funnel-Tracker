@@ -8,6 +8,7 @@ dependencies = [
     "botocore>=1.43.47",
     "faker>=40.28.1",
     "fastapi>=0.139.0",
+    "mcp>=1.28.1",
     "ollama>=0.6.2",
     "pandas>=3.0.3",
     "psycopg2-binary>=2.9.12",
