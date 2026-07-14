@@ -32,7 +32,7 @@ FROM local.db.fact_funnel_event;
        IcebergScan(
           table=local.db.fact_funnel_event,
           schemaId=0,
-          snapshotId=221063485992051602,
+          snapshotId=8568601916772387175,
           filters=,
           runtimeFilters=,
           groupedBy=
@@ -73,7 +73,7 @@ AND event_ts < '2025-06-08';
           IcebergScan(
              table=local.db.fact_funnel_event,
              schemaId=0,
-             snapshotId=221063485992051602,
+             snapshotId=8568601916772387175,
              filters=
                 event_ts IS NOT NULL,
                 event_ts >= 1748715300000000,

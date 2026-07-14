@@ -34,7 +34,7 @@ spark = (SparkSession.builder
     .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
     .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
     .config("spark.sql.catalog.local.type", "hadoop")   # simplest catalog type, no extra server needed
-    .config("spark.sql.catalog.local.warehouse", WAREHOUSE)
+    .config("spark.sql.catalog.local.warehouse", WAREHOUSE_URI)
     .getOrCreate())
 
 spark.sql("CREATE NAMESPACE IF NOT EXISTS local.db")

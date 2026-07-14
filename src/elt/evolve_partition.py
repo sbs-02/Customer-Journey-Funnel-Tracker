@@ -28,7 +28,7 @@ spark = (SparkSession.builder
     .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
     .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
     .config("spark.sql.catalog.local.type", "hadoop")
-    .config("spark.sql.catalog.local.warehouse", WAREHOUSE)
+    .config("spark.sql.catalog.local.warehouse", WAREHOUSE_URI)
     .getOrCreate())
 
 # Helper function to read the raw CSV files

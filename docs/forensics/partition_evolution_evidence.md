@@ -36,7 +36,7 @@ df.filter("event_ts < '2025-12-01'")
           IcebergScan(
              table=local.db.fact_funnel_event,
              schemaId=0,
-             snapshotId=221063485992051602,
+             snapshotId=8568601916772387175,
              branch=null,
              filters=event_ts IS NOT NULL, event_ts < 1764526500000000,
              runtimeFilters=,
@@ -68,7 +68,7 @@ df.filter("event_ts >= '2022-01-01'")
           IcebergScan(
              table=local.db.fact_funnel_event,
              schemaId=0,
-             snapshotId=221063485992051602,
+             snapshotId=8568601916772387175,
              branch=null,
              filters=event_ts IS NOT NULL, event_ts >= 1640974500000000,
              runtimeFilters=,
@@ -79,7 +79,7 @@ df.filter("event_ts >= '2022-01-01'")
 
 This query spans the full history of the table, from before the
 partition evolution through after it. Spark resolves it as a **single**
-`IcebergScan` against **one** snapshot (`221063485992051602`) --- there
+`IcebergScan` against **one** snapshot (`8568601916772387175`) --- there
 is no separate plan branch, union, or manual handling required for the
 old day-partitioned files versus the new month-partitioned files.
 
