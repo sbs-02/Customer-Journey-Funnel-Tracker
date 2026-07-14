@@ -27,13 +27,21 @@ DIM_CUSTOMER_SCHEMA = StructType([
     StructField("signup_date",  DateType(),    False),
 ])
 
+# iso_year is NOT the same as year at year boundaries: 2022-01-01 is ISO week 52
+# of ISO year 2021. Grouping weekly metrics by (year, iso_week) collides January
+# and December into one bucket.
+# Every weekly metric must partition by (iso_year, iso_week) -- never (year, iso_week).
 DIM_DATE_SCHEMA = StructType([
-    StructField("date_key",     IntegerType(), False),
-    StructField("date",         DateType(),    False),
-    StructField("year",         IntegerType(), False),
-    StructField("month",        IntegerType(), False),
-    StructField("iso_week",     IntegerType(), False),
-    StructField("day_of_week",  StringType(),  False),
+    StructField("date_key",        IntegerType(), False),
+    StructField("date",            DateType(),    False),
+    StructField("year",            IntegerType(), False),  # civil year, for month/quarter rollups
+    StructField("quarter",         IntegerType(), False),
+    StructField("month",           IntegerType(), False),
+    StructField("month_name",      StringType(),  False),
+    StructField("iso_year",        IntegerType(), False),  # pairs with iso_week, for weekly metrics
+    StructField("iso_week",        IntegerType(), False),
+    StructField("week_start_date", DateType(),    False),  # Monday of the ISO week
+    StructField("day_of_week",     StringType(),  False),
 ])
 
 DIM_PRODUCT_SCHEMA = StructType([
