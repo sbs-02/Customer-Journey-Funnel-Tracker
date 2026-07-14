@@ -21,6 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from data_generation.schemas import DIM_SCHEMAS, FACT_SCHEMAS
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from data_generation.schemas import DIM_SCHEMAS, FACT_SCHEMAS
+
 WAREHOUSE = os.environ.get(
     "ICEBERG_WAREHOUSE",
     os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
