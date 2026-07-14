@@ -13,6 +13,9 @@ from pathlib import Path
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, month, year
 from pyspark.sql.functions.partitioning import days
+from dotenv import load_dotenv
+
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
