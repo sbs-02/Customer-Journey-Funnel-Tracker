@@ -228,8 +228,8 @@ SELECT
     year, iso_week, revenue,
     LAG(revenue) OVER (ORDER BY year, iso_week) AS revenue_prior_week,
     ROUND(
-        100.0 * (revenue - LAG(revenue) OVER (ORDER BY year, iso_week))
-        / NULLIF(LAG(revenue) OVER (ORDER BY year, iso_week), 0),
+        (100.0 * (revenue - LAG(revenue) OVER (ORDER BY year, iso_week))
+        / NULLIF(LAG(revenue) OVER (ORDER BY year, iso_week), 0))::numeric,
     1) AS wow_pct
 FROM weekly_revenue
 ORDER BY year, iso_week;
@@ -247,8 +247,8 @@ SELECT
     iso_week, year, revenue,
     LAG(revenue) OVER (PARTITION BY iso_week ORDER BY year) AS revenue_last_year,
     ROUND(
-        100.0 * (revenue - LAG(revenue) OVER (PARTITION BY iso_week ORDER BY year))
-        / NULLIF(LAG(revenue) OVER (PARTITION BY iso_week ORDER BY year), 0),
+        (100.0 * (revenue - LAG(revenue) OVER (PARTITION BY iso_week ORDER BY year))
+        / NULLIF(LAG(revenue) OVER (PARTITION BY iso_week ORDER BY year), 0))::numeric,
     1) AS yoy_pct
 FROM weekly_revenue
 ORDER BY iso_week, year;
