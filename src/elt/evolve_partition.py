@@ -10,12 +10,17 @@ Prints the status of the partition evolution and data append operations.
 """
 
 import os
+from pathlib import Path
 from pyspark.sql import SparkSession
+from dotenv import load_dotenv
+
+load_dotenv()
 
 WAREHOUSE = os.environ.get(
     "ICEBERG_WAREHOUSE",
     os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
 )
+WAREHOUSE_URI = Path(WAREHOUSE).resolve().as_uri()
 
 spark = (SparkSession.builder
     .appName("iceberg-partition-evolution")
