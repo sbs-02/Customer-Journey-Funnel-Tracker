@@ -13,6 +13,9 @@ from pathlib import Path
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, month, year
 from pyspark.sql.functions.partitioning import days
+from dotenv import load_dotenv
+
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -22,6 +25,7 @@ WAREHOUSE = os.environ.get(
     "ICEBERG_WAREHOUSE",
     os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
 )
+WAREHOUSE_URI = Path(WAREHOUSE).resolve().as_uri()
 
 spark = (SparkSession.builder
     .appName("iceberg-load")
@@ -30,7 +34,7 @@ spark = (SparkSession.builder
     .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
     .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
     .config("spark.sql.catalog.local.type", "hadoop")   # simplest catalog type, no extra server needed
-    .config("spark.sql.catalog.local.warehouse", WAREHOUSE)
+    .config("spark.sql.catalog.local.warehouse", WAREHOUSE_URI)
     .getOrCreate())
 
 spark.sql("CREATE NAMESPACE IF NOT EXISTS local.db")
