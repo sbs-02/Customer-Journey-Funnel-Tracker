@@ -10,12 +10,16 @@ Illustrates Iceberg's metadata-only partition evolution capability.
 Prints the status of the partition evolution and data append operations.
 """
 
-import os
+import os, sys
 from pathlib import Path
 from pyspark.sql import SparkSession
 from dotenv import load_dotenv
 
 load_dotenv()
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from data_generation.schemas import DIM_SCHEMAS, FACT_SCHEMAS
 
 WAREHOUSE = os.environ.get(
     "ICEBERG_WAREHOUSE",
