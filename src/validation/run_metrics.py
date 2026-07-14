@@ -28,10 +28,22 @@ spark = (SparkSession.builder
 
 engine = create_engine(POSTGRES_URL)
 
-for name in ["fact_orders", "dim_date", "fact_funnel_event"]:
+TABLES = ["dim_date", "dim_customer", "dim_channel", "dim_product", "fact_funnel_event", "fact_orders"]
+
+for name in TABLES:
     print(f"Loading {name} into Postgres...")
     df = spark.table(f"local.db.{name}").toPandas()
     df.to_sql(name, engine, if_exists="replace", index=False)
+
+with engine.connect() as conn:
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_date_key ON fact_orders (date_key)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_customer_key ON fact_orders (customer_key)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_channel_key ON fact_orders (channel_key)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_product_key ON fact_orders (product_key)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_funnel_date_key ON fact_funnel_event (date_key)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_funnel_customer_key ON fact_funnel_event (customer_key)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_funnel_channel_key ON fact_funnel_event (channel_key)"))
+    conn.commit()
 
 spark.stop()
 
