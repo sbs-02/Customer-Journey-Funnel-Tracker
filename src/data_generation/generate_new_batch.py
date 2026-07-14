@@ -5,10 +5,12 @@ every new row gets a real date_key instead of a placeholder sentinel.
 Writes data to data/raw/fact_funnel_event_new.csv
 """
 
-import csv
+import csv, os, sys, random, datetime as dt
 import random
-import datetime as dt
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from data_generation.dim_date import DIM_DATE_COLUMNS, dim_date_row
 
 OUT = Path("data/raw")
 OUT.mkdir(parents=True, exist_ok=True)
@@ -24,6 +26,8 @@ OPP_RATE = .30
 NEW_START = dt.date(2026, 1, 1)
 NEW_END = dt.date(2026, 1, 5)  # Let's generate a few days of new data
 
+# 2025 exits at DAILY_VISITS * 1.25 growth; keep the new batch on that run-rate.
+NEW_DAILY_VISITS = int(int(os.environ.get("DAILY_VISITS", "120")) * 1.25)
 
 def load_dim_date():
     """Read the existing dim_date.csv into (rows, date_key lookup, next_key)."""
@@ -45,14 +49,9 @@ def extend_dim_date(rows, date_key, next_key, new_dates):
     for d in new_dates:
         iso = d.isoformat()
         if iso not in date_key:
-            rows.append({
-                "date_key": next_key,
-                "date": iso,
-                "year": d.year,
-                "month": d.month,
-                "iso_week": d.isocalendar().week,
-                "day_of_week": d.strftime("%A"),
-            })
+            # Built by the shared dim_date_row() so the incremental batch cannot
+            # emit a different column set than generate_data.py's initial load.
+            rows.append(dim_date_row(next_key, d))
             date_key[iso] = next_key
             next_key += 1
             added = True
@@ -60,13 +59,10 @@ def extend_dim_date(rows, date_key, next_key, new_dates):
 
 
 def write_dim_date(rows):
-    path = OUT / "dim_date.csv"
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["date_key", "date", "year", "month", "iso_week", "day_of_week"])
-        for row in rows:
-            w.writerow([row["date_key"], row["date"], row["year"], row["month"],
-                        row["iso_week"], row["day_of_week"]])
+    with open(OUT / "dim_date.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=DIM_DATE_COLUMNS)
+        w.writeheader()
+        w.writerows(rows)
 
 
 def daterange(a, b):
@@ -96,7 +92,7 @@ with open(OUT / "fact_funnel_event_new.csv", "w", newline="") as f:
         dk = date_key[current_date.isoformat()]
 
         # Mock daily volume numbers
-        visits = int(25 * random.uniform(.9, 1.1))
+        visits = int(NEW_DAILY_VISITS * random.uniform(.9, 1.1))
 
         for _ in range(visits):
             cust_key = random.randint(0, 2999)      # Pointing to keys from dim_customer

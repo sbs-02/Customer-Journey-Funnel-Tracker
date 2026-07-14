@@ -9,10 +9,13 @@ Uses a fixed random seed for reproducible datasets.
 Prints the total number of generated events and orders.
 """
 
-import csv, random, datetime as dt
+import os, csv, random, sys, datetime as dt
 from pathlib import Path
 from faker import Faker
 from dotenv import load_dotenv
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from data_generation.dim_date import DIM_DATE_COLUMNS, dim_date_row
 
 load_dotenv()
 
@@ -26,6 +29,7 @@ OPP_RATE, ORDER_RATE = .30, .35
 PRODUCTS = [("Starter Plan", "Software", 29.0), ("Pro Plan", "Software", 99.0),
             ("Enterprise Plan", "Software", 299.0)]
 START, END = dt.date(2022, 1, 1), dt.date(2025, 12, 31)
+DAILY_VISITS = int(os.environ.get("DAILY_VISITS", "120"))
 
 def daterange(a, b):
     d = a
@@ -35,9 +39,10 @@ def daterange(a, b):
 
 dates = list(daterange(START, END))
 with open(OUT / "dim_date.csv", "w", newline="") as f:
-    w = csv.writer(f); w.writerow(["date_key", "date", "year", "month", "iso_week", "day_of_week"])
+    w = csv.DictWriter(f, fieldnames=DIM_DATE_COLUMNS)
+    w.writeheader()
     for i, d in enumerate(dates):
-        w.writerow([i, d.isoformat(), d.year, d.month, d.isocalendar().week, d.strftime("%A")])
+        w.writerow(dim_date_row(i, d))
 date_key = {d.isoformat(): i for i, d in enumerate(dates)}
 
 customers = [(i, fake.uuid4(), fake.name(), random.choice(["SMB", "Mid-Market", "Enterprise"]),
@@ -68,7 +73,7 @@ event_id = order_id = 0
 for d in dates:
     growth = 1.0 if d.year == 2022 else 1.08 if d.year == 2023 else 1.15 if d.year == 2024 else 1.25 
     season = 1 + 0.15 * ((d.isocalendar().week % 8) / 8)   # a gentle wave, not a flat line
-    visits = int(2 * growth * season * random.uniform(.9, 1.1))
+    visits = int(DAILY_VISITS * growth * season * random.uniform(.9, 1.1))
     for _ in range(visits):
         cust = random.choice(customers)
         chan = random.choice(CHANNELS)
