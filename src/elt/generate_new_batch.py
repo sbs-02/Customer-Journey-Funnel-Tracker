@@ -4,6 +4,7 @@ Extends dim_date.csv with any missing dates before generating events, so
 every new row gets a real date_key instead of a placeholder sentinel.
 Writes data to data/raw/fact_funnel_event_new.csv
 """
+
 import csv
 import random
 import datetime as dt
