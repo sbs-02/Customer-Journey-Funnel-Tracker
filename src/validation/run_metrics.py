@@ -1,53 +1,62 @@
-import glob
+"""
+Execute every query in sql/metrics.sql against the Postgres serving layer and
+report pass/fail per statement.
+
+Run:  uv run python src/elt/serve_postgres.py      # publish first
+      uv run python src/validation/run_metrics.py  # then validate
+"""
+
 import os
 import re
+import sys
+import logging
 from pathlib import Path
-from pyiceberg.table import StaticTable
+
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 load_dotenv()
 
-WAREHOUSE = os.environ.get(
-    "ICEBERG_WAREHOUSE",
-    os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
-)
-
+ROOT = Path(__file__).resolve().parents[2]
 POSTGRES_URL = (
     f"postgresql+psycopg2://{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}"
     f"@{os.environ['POSTGRES_HOST']}:{os.environ['POSTGRES_PORT']}/{os.environ['POSTGRES_DB']}"
 )
 
-def to_file_uri(path: str) -> str:
-    uri = Path(path).resolve().as_uri()
-    if re.match(r"^file:///[A-Za-z]:/", uri):
-        uri = uri.replace("file:///", "file://", 1)
-    return uri
+logging.basicConfig(level=logging.INFO, format="%(levelname)-7s | %(message)s")
+log = logging.getLogger("run_metrics")
 
-def latest_metadata(table_name: str) -> str:
-    files = glob.glob(os.path.join(WAREHOUSE, "db", table_name, "metadata", "*.metadata.json"))
-    if not files:
-        raise FileNotFoundError(f"No metadata files found for {table_name}")
-    latest = max(files, key=os.path.getmtime)
-    return to_file_uri(latest)
 
-def load_table_arrow(table_name: str):
-    return StaticTable.from_metadata(latest_metadata(table_name)).scan().to_arrow()
+def split_statements(sql: str) -> list[str]:
+    """Split a .sql file into executable statements.
 
-engine = create_engine(POSTGRES_URL)
+    A naive sql.split(';') breaks on any semicolon inside a comment -- and a
+    comment explaining ISO-week semantics is exactly the sort of prose that
+    contains one. Strip line comments first, so the file stays freely commentable.
+    """
+    return [s.strip() for s in re.sub(r"--[^\n]*", "", sql).split(";") if s.strip()]
 
-for name in ["fact_orders", "dim_date", "fact_funnel_event"]:
-    print(f"Loading {name} into Postgres...")
-    arrow_tbl = load_table_arrow(name)
-    arrow_tbl.to_pandas().to_sql(name, engine, if_exists="replace", index=False)
 
-sql_path = os.path.join(os.path.dirname(__file__), "..", "..", "sql", "metrics.sql")
-queries = [q.strip() for q in open(sql_path).read().split(';') if q.strip()]
+def main() -> int:
+    engine = create_engine(POSTGRES_URL)
+    statements = split_statements((ROOT / "sql" / "metrics.sql").read_text())
+    log.info("sql/metrics.sql -> %d statements", len(statements))
 
-with engine.connect() as conn:
-    for i, q in enumerate(queries, 1):
-        print(f"\n--- Query {i} ---")
-        result = conn.execute(text(q))
-        rows = result.fetchall()
-        for row in rows[:10]:
-            print(row)
+    failures = 0
+    for i, stmt in enumerate(statements, 1):
+        # Each statement gets its own transaction, so one failure does not
+        # cascade into "current transaction is aborted" for all the others.
+        try:
+            with engine.connect() as conn:
+                rows = conn.execute(text(stmt)).fetchall()
+            log.info("[%2d] OK   %6d rows", i, len(rows))
+        except Exception as exc:
+            failures += 1
+            log.error("[%2d] FAIL  %s", i, str(exc).splitlines()[0])
+
+    log.info("%d/%d queries passed", len(statements) - failures, len(statements))
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
