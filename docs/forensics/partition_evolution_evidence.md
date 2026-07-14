@@ -36,7 +36,7 @@ df.filter("event_ts < '2025-12-01'")
           IcebergScan(
              table=local.db.fact_funnel_event,
              schemaId=0,
-             snapshotId=5908287451667788684,
+             snapshotId=8568601916772387175,
              branch=null,
              filters=event_ts IS NOT NULL, event_ts < 1764526500000000,
              runtimeFilters=,
@@ -68,7 +68,7 @@ df.filter("event_ts >= '2022-01-01'")
           IcebergScan(
              table=local.db.fact_funnel_event,
              schemaId=0,
-             snapshotId=5908287451667788684,
+             snapshotId=8568601916772387175,
              branch=null,
              filters=event_ts IS NOT NULL, event_ts >= 1640974500000000,
              runtimeFilters=,
@@ -79,7 +79,7 @@ df.filter("event_ts >= '2022-01-01'")
 
 This query spans the full history of the table, from before the
 partition evolution through after it. Spark resolves it as a **single**
-`IcebergScan` against **one** snapshot (`5908287451667788684`) --- there
+`IcebergScan` against **one** snapshot (`8568601916772387175`) --- there
 is no separate plan branch, union, or manual handling required for the
 old day-partitioned files versus the new month-partitioned files.
 
@@ -99,32 +99,33 @@ find warehouse/db/fact_funnel_event/data -path "*event_ts_month=*" -name "*.parq
 
 ## Result
 
-  Partition Layout            File Count
-  ---------------------------- ------------
-  `event_ts_day=*` (old spec)   5664
-  `event_ts_month=*` (new spec) 2
+  Partition Layout             File Count
+  ----------------------------- ------------
+  `event_ts_day=*` (old spec)    1416
+  `event_ts_month=*` (new spec)  2
 
 ## Observation
 
 Data files under the old day-partitioned layout (`event_ts_day=...`)
-remain on disk, untouched, spanning 2023-02-02 through 2025-12-31.
+remain on disk, untouched, spanning the original 2022-01-01 through
+2025-12-31 date range.
 
 New data written after the evolution lands under the new
-month-partitioned layout (`event_ts_month=2025-12`, `event_ts_month=2026-01`)
-rather than being merged into or replacing the old structure.
+month-partitioned layout (`event_ts_month=2026-01`) rather than being
+merged into or replacing the old structure.
 
-No rewrite of the 5664 pre-evolution files occurred as part of the
+No rewrite of the 1416 pre-evolution files occurred as part of the
 schema/partition change.
 
 ------------------------------------------------------------------------
 
 # Comparison
 
-  Evidence Type              Result
-  --------------------------- -----------------------------------------------
-  Historical-range scan       Single IcebergScan, correct filter pushdown
+  Evidence Type               Result
+  ---------------------------- -----------------------------------------------
+  Historical-range scan        Single IcebergScan, correct filter pushdown
   Cross-boundary scan          Single IcebergScan spanning both layouts
-  On-disk day-partition files  5664 files present, unchanged
+  On-disk day-partition files  1416 files present, unchanged
   On-disk month-partition files 2 files present, isolated to new spec
 
 ------------------------------------------------------------------------
@@ -136,7 +137,7 @@ queryable dataset across a partition spec change, without requiring
 separate handling of old and new layouts.
 
 The on-disk file counts confirm this is achieved without rewriting
-historical data: the 5664 day-partitioned files created before the
+historical data: the 1416 day-partitioned files created before the
 evolution remain in place, while new writes are isolated under the
 month-partitioned spec.
 

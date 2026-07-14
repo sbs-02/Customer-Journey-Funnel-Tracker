@@ -12,6 +12,9 @@ Prints the total number of generated events and orders.
 import csv, random, datetime as dt
 from pathlib import Path
 from faker import Faker
+from dotenv import load_dotenv
+
+load_dotenv()
 
 fake = Faker()
 random.seed(42)                       # same "random" data every run — reproducible
