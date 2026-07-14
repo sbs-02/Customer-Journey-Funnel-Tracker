@@ -2,7 +2,8 @@
 Demonstrates Apache Iceberg partition evolution using Spark.
 Connects to a local Iceberg Hadoop catalog and warehouse.
 Updates the partition specification from daily to monthly partitions.
-Loads a new batch of funnel event data from a CSV file.
+Loads a new batch of funnel event data from a CSV file using the shared
+schema (schemas.py) instead of inferring it.
 Casts event timestamps to the correct data type before ingestion.
 Appends the new data using the evolved partition layout without rewriting existing files.
 Illustrates Iceberg's metadata-only partition evolution capability.
@@ -31,9 +32,10 @@ spark = (SparkSession.builder
     .config("spark.sql.catalog.local.warehouse", WAREHOUSE_URI)
     .getOrCreate())
 
-# Helper function to read the raw CSV files
-def load_csv(name):
-    return spark.read.option("header", True).option("inferSchema", True).csv(f"data/raw/{name}.csv")
+# Helper function to read the raw CSV files, using the shared schema
+# (fact_funnel_event_new.csv shares FACT_FUNNEL_EVENT_SCHEMA with fact_funnel_event.csv)
+def load_csv(name, schema):
+    return spark.read.option("header", True).schema(schema).csv(f"data/raw/{name}.csv")
 
 print("--- Executing Partition Evolution ---")
 
@@ -47,7 +49,7 @@ print("Successfully updated partition layout metadata from daily to monthly.")
 
 # Load the new batch file, ensuring timestamps are cast properly
 try:
-    new_batch_raw = load_csv("fact_funnel_event_new")
+    new_batch_raw = load_csv("fact_funnel_event_new", FACT_SCHEMAS["fact_funnel_event"])
     new_batch = new_batch_raw.withColumn("event_ts", new_batch_raw["event_ts"].cast("timestamp"))
 
     # Append data to the table without rewriting historical files
