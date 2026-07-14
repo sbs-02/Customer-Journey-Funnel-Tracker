@@ -1,59 +1,62 @@
+"""
+Execute every query in sql/metrics.sql against the Postgres serving layer and
+report pass/fail per statement.
+
+Run:  uv run python src/elt/serve_postgres.py      # publish first
+      uv run python src/validation/run_metrics.py  # then validate
+"""
+
 import os
+import re
+import sys
+import logging
 from pathlib import Path
-from pyspark.sql import SparkSession
+
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
 load_dotenv()
 
-WAREHOUSE = os.environ.get(
-    "ICEBERG_WAREHOUSE",
-    os.path.join(os.path.dirname(__file__), "..", "..", "warehouse")
-)
-WAREHOUSE_URI = Path(WAREHOUSE).resolve().as_uri()
-
+ROOT = Path(__file__).resolve().parents[2]
 POSTGRES_URL = (
     f"postgresql+psycopg2://{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}"
     f"@{os.environ['POSTGRES_HOST']}:{os.environ['POSTGRES_PORT']}/{os.environ['POSTGRES_DB']}"
 )
 
-spark = (SparkSession.builder
-    .appName("run-metrics")
-    .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-4.1_2.13:1.11.0")
-    .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-    .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
-    .config("spark.sql.catalog.local.type", "hadoop")
-    .config("spark.sql.catalog.local.warehouse", WAREHOUSE_URI)
-    .getOrCreate())
+logging.basicConfig(level=logging.INFO, format="%(levelname)-7s | %(message)s")
+log = logging.getLogger("run_metrics")
 
-engine = create_engine(POSTGRES_URL)
 
-TABLES = ["dim_date", "dim_customer", "dim_channel", "dim_product", "fact_funnel_event", "fact_orders"]
+def split_statements(sql: str) -> list[str]:
+    """Split a .sql file into executable statements.
 
-for name in TABLES:
-    print(f"Loading {name} into Postgres...")
-    df = spark.table(f"local.db.{name}").toPandas()
-    df.to_sql(name, engine, if_exists="replace", index=False)
+    A naive sql.split(';') breaks on any semicolon inside a comment -- and a
+    comment explaining ISO-week semantics is exactly the sort of prose that
+    contains one. Strip line comments first, so the file stays freely commentable.
+    """
+    return [s.strip() for s in re.sub(r"--[^\n]*", "", sql).split(";") if s.strip()]
 
-with engine.connect() as conn:
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_date_key ON fact_orders (date_key)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_customer_key ON fact_orders (customer_key)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_channel_key ON fact_orders (channel_key)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_orders_product_key ON fact_orders (product_key)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_funnel_date_key ON fact_funnel_event (date_key)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_funnel_customer_key ON fact_funnel_event (customer_key)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_fact_funnel_channel_key ON fact_funnel_event (channel_key)"))
-    conn.commit()
 
-spark.stop()
+def main() -> int:
+    engine = create_engine(POSTGRES_URL)
+    statements = split_statements((ROOT / "sql" / "metrics.sql").read_text())
+    log.info("sql/metrics.sql -> %d statements", len(statements))
 
-sql_path = os.path.join(os.path.dirname(__file__), "..", "..", "sql", "metrics.sql")
-queries = [q.strip() for q in open(sql_path).read().split(';') if q.strip()]
+    failures = 0
+    for i, stmt in enumerate(statements, 1):
+        # Each statement gets its own transaction, so one failure does not
+        # cascade into "current transaction is aborted" for all the others.
+        try:
+            with engine.connect() as conn:
+                rows = conn.execute(text(stmt)).fetchall()
+            log.info("[%2d] OK   %6d rows", i, len(rows))
+        except Exception as exc:
+            failures += 1
+            log.error("[%2d] FAIL  %s", i, str(exc).splitlines()[0])
 
-with engine.connect() as conn:
-    for i, q in enumerate(queries, 1):
-        print(f"\n--- Query {i} ---")
-        result = conn.execute(text(q))
-        rows = result.fetchall()
-        for row in rows[:10]:
-            print(row)
+    log.info("%d/%d queries passed", len(statements) - failures, len(statements))
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
