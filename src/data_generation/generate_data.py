@@ -28,8 +28,7 @@ LEAD_RATE = {"Paid Search": .18, "Email": .30, "Organic": .22, "Social": .12}
 OPP_RATE, ORDER_RATE = .30, .35
 PRODUCTS = [("Starter Plan", "Software", 29.0), ("Pro Plan", "Software", 99.0),
             ("Enterprise Plan", "Software", 299.0)]
-START, END = dt.date(2022, 1, 1), dt.date(2025, 12, 31)
-DIM_DATE_START = dt.date(2021, 1, 4)
+START, END = dt.date(2022, 1, 3), dt.date(2025, 12, 31)
 DAILY_VISITS = int(os.environ.get("DAILY_VISITS", "120"))
 
 def daterange(a, b):
@@ -38,13 +37,13 @@ def daterange(a, b):
         yield d
         d += dt.timedelta(days=1)
 
-dim_dates = list(daterange(DIM_DATE_START, END))
+dates = list(daterange(START, END))
 with open(OUT / "dim_date.csv", "w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=DIM_DATE_COLUMNS)
     w.writeheader()
-    for i, d in enumerate(dim_dates):
+    for i, d in enumerate(dates):
         w.writerow(dim_date_row(i, d))
-date_key = {d.isoformat(): i for i, d in enumerate(dim_dates)}
+date_key = {d.isoformat(): i for i, d in enumerate(dates)}
 
 dates = list(daterange(START, END))
 

@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from tracemalloc import start
+import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -182,8 +183,8 @@ def funnel_yoy(stage: str, iso_year: int | None = None,
          stage, week.iso_year - 1, week.iso_week],
     )
     row = df.iloc[0]
-    current = None if row.current_events is None else int(row.current_events)
-    prior = None if row.prior_year_events is None else int(row.prior_year_events)
+    current = None if pd.isna(row.current_events) else int(row.current_events)
+    prior = None if pd.isna(row.prior_year_events) else int(row.prior_year_events)
 
     if current is None:
         raise MetricError(
