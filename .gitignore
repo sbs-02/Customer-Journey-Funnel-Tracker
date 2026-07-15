@@ -27,9 +27,6 @@ data/raw/
 data/powerbi/
 warehouse/
 
-# Power BI
-*.pbix
-
 # OS
 .DS_Store
 Thumbs.db
