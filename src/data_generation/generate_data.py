@@ -29,6 +29,7 @@ OPP_RATE, ORDER_RATE = .30, .35
 PRODUCTS = [("Starter Plan", "Software", 29.0), ("Pro Plan", "Software", 99.0),
             ("Enterprise Plan", "Software", 299.0)]
 START, END = dt.date(2022, 1, 1), dt.date(2025, 12, 31)
+DIM_DATE_START = dt.date(2021, 1, 4)
 DAILY_VISITS = int(os.environ.get("DAILY_VISITS", "120"))
 
 def daterange(a, b):
@@ -37,13 +38,15 @@ def daterange(a, b):
         yield d
         d += dt.timedelta(days=1)
 
-dates = list(daterange(START, END))
+dim_dates = list(daterange(DIM_DATE_START, END))
 with open(OUT / "dim_date.csv", "w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=DIM_DATE_COLUMNS)
     w.writeheader()
-    for i, d in enumerate(dates):
+    for i, d in enumerate(dim_dates):
         w.writerow(dim_date_row(i, d))
-date_key = {d.isoformat(): i for i, d in enumerate(dates)}
+date_key = {d.isoformat(): i for i, d in enumerate(dim_dates)}
+
+dates = list(daterange(START, END))
 
 customers = [(i, fake.uuid4(), fake.name(), random.choice(["SMB", "Mid-Market", "Enterprise"]),
               fake.state(), fake.date_between(START, END).isoformat()) for i in range(3000)]

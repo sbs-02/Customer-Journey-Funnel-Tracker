@@ -20,6 +20,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from tracemalloc import start
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -537,7 +538,9 @@ def explain_scan(iso_year: int | None = None, iso_week: int | None = None) -> di
     week = resolve_week(iso_year, iso_week)
     start = week.week_start_date
     end = start + dt.timedelta(days=7)
-    row_filter = f"event_ts >= '{start.isoformat()}' AND event_ts < '{end.isoformat()}'"
+    start_ts = dt.datetime.combine(start, dt.time.min, tzinfo=dt.timezone.utc)
+    end_ts = dt.datetime.combine(end, dt.time.min, tzinfo=dt.timezone.utc)
+    row_filter = f"event_ts >= '{start_ts.isoformat()}' AND event_ts < '{end_ts.isoformat()}'"
 
     stats = lakehouse.scan_stats(FACT_FUNNEL, row_filter)
     pct = round(100.0 * stats.files_skipped / stats.files_total, 1) if stats.files_total else 0.0

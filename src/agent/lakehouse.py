@@ -33,6 +33,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+if os.name == "nt":
+    import re
+    from urllib.parse import urlparse
+    import pyiceberg.io as _pyi_io
+    import pyiceberg.io.pyarrow as _pyi_pyarrow
+
+    _DRIVE_LETTER = re.compile(r"^/[A-Za-z]:")
+
+    def _windows_safe_parse_location(location: str, properties=None):
+        uri = urlparse(location)
+        if not uri.scheme:
+            return "file", uri.netloc, os.path.abspath(location)
+        if uri.scheme in ("hdfs", "viewfs"):
+            return uri.scheme, uri.netloc, uri.path
+        path = f"{uri.netloc}{uri.path}"
+        if uri.scheme == "file" and _DRIVE_LETTER.match(path):
+            path = path[1:]
+        return uri.scheme, uri.netloc, path
+
+    _pyi_io._parse_location = _windows_safe_parse_location
+    _pyi_pyarrow._parse_location = _windows_safe_parse_location
+    _pyi_pyarrow.PyArrowFileIO.parse_location = staticmethod(_windows_safe_parse_location)
+
 ROOT = Path(__file__).resolve().parents[2]
 WAREHOUSE = Path(os.environ.get("ICEBERG_WAREHOUSE", ROOT / "warehouse")).resolve()
 NAMESPACE = os.environ.get("ICEBERG_NAMESPACE", "db")
@@ -116,7 +139,7 @@ class Lakehouse:
 
     def table(self, name: str) -> StaticTable:
         if name not in self._tables:
-            self._tables[name] = StaticTable.from_metadata(str(_metadata_file(name)))
+            self._tables[name] = StaticTable.from_metadata(_metadata_file(name).resolve().as_uri())
         return self._tables[name]
 
     def _wrap(self, snap) -> Snapshot:
