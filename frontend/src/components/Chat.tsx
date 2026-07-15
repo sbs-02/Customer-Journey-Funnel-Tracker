@@ -1,56 +1,96 @@
-import { useState } from "react";
-import type { ToolCall } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
-/**
- * Shows the receipts behind a number.
- *
- * The assignment requires the agent to state which snapshot and date range every
- * figure came from. Rendering that in the UI -- rather than trusting the model to
- * mention it in prose -- means the claim is verifiable even when the model
- * forgets to say it.
- */
-export function ProvenanceCard({ call }: { call: ToolCall }) {
-  const [open, setOpen] = useState(false);
+import { sendChat, fetchSuggestedPrompts, type Message } from "../api";
+import { ProvenanceCard } from "./ProvenanceCard";
 
-  if (call.result.error) {
-    return (
-      <div className="prov prov--error">
-        <strong>{call.name}</strong> could not answer: {String(call.result.error)}
-      </div>
-    );
+export function Chat() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [suggested, setSuggested] = useState<string[]>([]);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { fetchSuggestedPrompts().then(setSuggested); }, []);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const mutation = useMutation({
+    mutationFn: (text: string) => sendChat(text, messages),
+    onSuccess: (data) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.answer, toolCalls: data.tool_calls },
+      ]);
+    },
+    onError: (error: Error) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `**Something went wrong.**\n\n${error.message}` },
+      ]);
+    },
+  });
+
+  function ask(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || mutation.isPending) return;
+    setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    setInput("");
+    mutation.mutate(trimmed);
   }
 
-  const p = call.result.provenance;
-  if (!p) return null;
-
   return (
-    <div className="prov">
-      <button className="prov__toggle" onClick={() => setOpen(!open)}>
-        {open ? "▾" : "▸"} <code>{call.name}</code>
-        <span className="prov__snap">snapshot {p.snapshot_id}</span>
-      </button>
+    <div className="chat">
+      <header className="chat__header">
+        <h1>Funnel Analyst</h1>
+        <p>Ask about visits, leads, opportunities, orders and revenue.
+           Every number is read live from the Iceberg lakehouse.</p>
+      </header>
 
-      {open && (
-        <dl className="prov__body">
-          <dt>Snapshot</dt>
-          <dd><code>{p.snapshot_id}</code></dd>
+      <div className="chat__log">
+        {messages.length === 0 && (
+          <div className="chat__empty">
+            <p>Try one of these:</p>
+            {suggested.map((prompt) => (
+              <button key={prompt} className="chip" onClick={() => ask(prompt)}>
+                {prompt}
+              </button>
+            ))}
+          </div>
+        )}
 
-          <dt>Committed</dt>
-          <dd>{new Date(p.snapshot_committed_at).toLocaleString()}</dd>
+        {messages.map((m, i) => (
+          <div key={i} className={`msg msg--${m.role}`}>
+            <div className="msg__body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+            </div>
+            {m.toolCalls?.map((call, j) => <ProvenanceCard key={j} call={call} />)}
+          </div>
+        ))}
 
-          <dt>Computed</dt>
-          <dd>{new Date(p.as_of_date).toLocaleString()}</dd>
+        {mutation.isPending && (
+          <div className="msg msg--assistant">
+            <div className="msg__body typing"><span/><span/><span/></div>
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
 
-          <dt>Date range</dt>
-          <dd><code>{JSON.stringify(p.date_range)}</code></dd>
-
-          <dt>Source tables</dt>
-          <dd>{p.source_tables.join(", ")}</dd>
-
-          <dt>Calculation</dt>
-          <dd>{p.calculation}</dd>
-        </dl>
-      )}
+      <form
+        className="chat__input"
+        onSubmit={(e) => { e.preventDefault(); ask(input); }}
+      >
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="How does this week's lead funnel compare to the same week last year?"
+          disabled={mutation.isPending}
+          aria-label="Ask a question"
+        />
+        <button type="submit" disabled={mutation.isPending || !input.trim()}>
+          {mutation.isPending ? "Thinking…" : "Ask"}
+        </button>
+      </form>
     </div>
   );
 }
