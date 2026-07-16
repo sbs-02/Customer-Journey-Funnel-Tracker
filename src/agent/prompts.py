@@ -71,10 +71,6 @@ TOOL_RESULT_REMINDER = (
 # Shown in the UI as clickable starters. The first is the assignment's own
 # acceptance-criterion question, verbatim.
 SUGGESTED_PROMPTS = [
-    "How does this week's lead funnel compare to the same week last year?",
-    "Show me the lead trend over the last 12 weeks.",
-    "What is our visit-to-order conversion rate this week?",
-    "Which channel drove the most revenue this week?",
     "What did the lead data look like as of 2026-01-02?",
     "How many files did Iceberg skip to answer that?",
 ]
