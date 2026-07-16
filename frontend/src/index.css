@@ -1,83 +1,74 @@
-:root{
-  --cream:#F4EFE6; --ink:#2B2420; --gold:#B08D57;
-  --card:#FBF8F2; --line:#E4Dccd; --muted:#7A6E62;
-  --radius:14px; --gap:1rem; --max:760px;
-  --serif:"Fraunces",Georgia,serif; --sans:"Inter",system-ui,sans-serif;
-}
-body{background:var(--cream); color:var(--ink); font-family:var(--sans);}
-.chat{max-width:var(--max); margin:0 auto; padding:var(--gap);}
-.chat__header h1{font-family:var(--serif); letter-spacing:-.01em;}
-.msg--user .msg__body{background:color-mix(in srgb,var(--gold) 14%,var(--cream)); margin-left:auto;}
-.msg--assistant .msg__body{background:var(--card); border:1px solid var(--line);}
-.msg__body{max-width:82%; padding:.85rem 1.05rem; border-radius:var(--radius);}
-.chip{border:1px solid var(--line); background:var(--card); border-radius:999px; padding:.5rem .9rem;}
-.chip:hover{border-color:var(--gold); color:var(--gold);}
-.chat__input{position:sticky; bottom:0; background:var(--cream);}
-.chat__input button{background:var(--gold); color:#fff; border-radius:999px;}
-.prov__toggle{color:var(--muted); font-size:.82rem;}
-.typing span{background:var(--gold);}
+/* ── Foundation ───────────────────────────────────────────────────────
+   Light only. Sand ground, teal accent.
+
+   The canvas is warm and near-neutral on purpose: it fills most of the
+   screen, so it stays quiet and lets colour mean something where it does
+   appear. Teal leads -- cool against the warm paper -- and is spent only
+   on what you can press or what you can verify. The supporting colours
+   (amber, clay, moss) appear as dots and nothing else. Neutrals are
+   warmed a few percent toward the sand so the greys read as chosen. */
 
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* Surfaces */
+  --canvas: #faf9f6;          /* the sand ground */
+  --surface: #ffffff;         /* cards, bubbles, sheet */
+  --surface-2: #f6f4f0;       /* insets, table heads */
+  --surface-3: #efebe4;       /* hover fills */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Text */
+  --ink: #1c1a16;             /* primary */
+  --ink-2: #55504a;           /* secondary prose */
+  --ink-3: #6f6a62;           /* labels, captions -- 5.1:1 on canvas */
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  /* Rules */
+  --line: #ebe7e0;
+  --line-2: #f3f0ea;
+
+  /* Lead colour */
+  --accent: #0f766e;
+  /* The light end of the gradient. Any lighter and white text on the
+     user's bubble drops under 4.5:1 -- this is the ceiling, not a taste
+     call. */
+  --accent-lift: #128177;
+  --accent-hover: #0c5f58;
+  --accent-wash: #ecf6f4;
+  --accent-line: #b8ddd8;
+  --on-accent: #ffffff;
+
+  /* The supporting cast: dots only, never text, never data */
+  --amber: #b45309;
+  --clay: #c2410c;
+  --moss: #4d7c0f;
+
+  /* Semantic, kept separate from the accent */
+  --danger: #b42318;
+
+  /* Depth, tinted warm so shadows belong to this ground */
+  --shadow-sm: 0 1px 2px rgba(28, 26, 22, 0.04), 0 2px 6px rgba(28, 26, 22, 0.05);
+  --shadow-md: 0 4px 10px rgba(28, 26, 22, 0.05), 0 14px 30px -10px rgba(28, 26, 22, 0.18);
+  --shadow-accent: 0 2px 6px rgba(15, 118, 110, 0.22), 0 8px 18px -6px rgba(15, 118, 110, 0.35);
+
+  --code-bg: #f2efe9;
+
+  --sans: 'Plus Jakarta Sans', system-ui, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+  --pop: cubic-bezier(0.34, 1.56, 0.64, 1);   /* the bit of bounce */
+  --fast: 130ms;
+  --base: 220ms;
+
+  font: 16px/1.5 var(--sans);
+  color-scheme: light;
+  color: var(--ink-2);
+  background: var(--canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
 }
 
@@ -85,46 +76,28 @@ body {
   margin: 0;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+#root {
+  width: 60rem;
+  max-width: 100%;
+  margin: 0 auto;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-inline: 1px solid var(--line);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@media (max-width: 60rem) {
+  #root {
+    border-inline: none;
   }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
 }
 
 code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  border-radius: 5px;
+  padding: 0.12em 0.38em;
   background: var(--code-bg);
+  color: var(--accent);
 }

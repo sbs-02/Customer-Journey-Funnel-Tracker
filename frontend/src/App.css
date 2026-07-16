@@ -1,184 +1,629 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+/* ── Funnel Analyst ───────────────────────────────────────────────────
+   Question in, sourced answer out.
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-}
+   The chrome is allowed to have some fun -- teal fills, round corners,
+   a little bounce on the things you press. The data is not: tables,
+   figures and provenance stay quiet and mono, because a number you can
+   check is the whole point of the product.
 
-.hero {
-  position: relative;
+   Everything is scoped under .chat so it never fights the base sheet. */
 
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
-}
-
-#center {
+.chat {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
-}
-
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
+  min-height: 0;                 /* let the log scroll, not the page */
   text-align: left;
+  color: var(--ink-2);
 
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
+  --reading: 46rem;              /* comfortable measure for answers */
+  --gutter: clamp(1.15rem, 4vw, 2.5rem);
+  /* one shared inset: header, stream and dock keep the same left edge */
+  --pad: max(var(--gutter), calc((100% - var(--reading)) / 2));
 
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
+  --r-lg: 20px;
+  --r: 14px;
+  --r-sm: 9px;
+  --avatar: 1.9rem;
 }
 
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-#next-steps ul {
-  list-style: none;
-  padding: 0;
+/* ── Header ─────────────────────────────────────────────────────────── */
+.chat__header {
   display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem var(--pad);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+.chat__brand {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  background: linear-gradient(150deg, var(--accent-lift), var(--accent) 70%);
+  box-shadow: var(--shadow-accent);
+  flex: none;
+  transition: transform var(--base) var(--pop);
+}
+.chat__header:hover .chat__brand { transform: rotate(-6deg) scale(1.05); }
+.chat__brand-mark {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: var(--on-accent);
+}
+.chat__titles {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+.chat__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0;
+}
+.chat__source {
+  font-size: 0.75rem;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
+/* ── Log / scroll region ────────────────────────────────────────────── */
+.chat__log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  background: var(--canvas);
+  /* A column here (rather than min-height on the stream, which can't
+     resolve against an auto-height parent) is what lets the opening
+     state centre itself with margin:auto. */
+  display: flex;
+  flex-direction: column;
+}
+.chat__stream {
+  flex: 1 0 auto;                /* fill the log, then grow with the thread */
+  padding: 1.75rem var(--pad) 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;                     /* the gap *within* one exchange */
+}
+/* A question and its answer are one exchange, so they sit closer to each
+   other than to the next one. An even gap everywhere made the question
+   drift away from the answer it belongs to. */
+.turn--user:not(:first-child) { margin-top: 1.5rem; }
+
+/* ── Opening state ──────────────────────────────────────────────────── */
+.chat__empty {
+  margin: auto 0;
+  padding: clamp(1rem, 5vh, 3rem) 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.chat__empty-mark {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: var(--r);
+  background: linear-gradient(150deg, var(--accent-lift), var(--accent) 70%);
+  box-shadow: var(--shadow-accent);
+  margin-bottom: 1.1rem;
+  animation: drop 500ms var(--pop) both;
+}
+.chat__empty-mark svg {
+  width: 1.6rem;
+  height: 1.6rem;
+  fill: var(--on-accent);
+}
+.chat__empty-title {
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  margin: 0 0 0.4rem;
+  text-wrap: balance;
+}
+.chat__note {
+  /* Tight to its heading, loose before the cards -- the two belong
+     together, the cards are a separate thing to act on. */
+  margin: 0 0 2rem;
+  max-width: 42ch;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-wrap: pretty;
 }
 
-.ticks {
-  position: relative;
+/* Suggested questions: cards, because each one is a thing you can pick.
+   Wrapping flex rather than a grid, so an odd last card centres under the
+   row above instead of hanging off to one side. */
+.chat__chips {
   width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+  text-align: left;
+}
+.chip {
+  flex: 0 1 calc(50% - 0.325rem);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: left;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 0.85rem 0.95rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--fast) var(--ease),
+              box-shadow var(--base) var(--ease),
+              transform var(--base) var(--pop);
+}
+/* A dot per card, cycling the accent family -- the only place the
+   supporting colours appear. */
+.chip__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: transform var(--base) var(--pop);
+}
+.chip:nth-child(4n + 2) .chip__dot { background: var(--amber); }
+.chip:nth-child(4n + 3) .chip__dot { background: var(--clay); }
+.chip:nth-child(4n + 4) .chip__dot { background: var(--moss); }
+.chip__text { flex: 1; }
+.chip__go {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  color: var(--ink-3);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity var(--base) var(--ease), transform var(--base) var(--pop),
+              color var(--fast) var(--ease);
+}
+.chip:hover {
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+}
+.chip:hover .chip__dot { transform: scale(1.5); }
+.chip:hover .chip__go { opacity: 1; transform: none; color: var(--accent); }
+.chip:active { transform: translateY(-1px) scale(0.99); }
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
-  }
+/* ── Turns ──────────────────────────────────────────────────────────── */
+/* Arrives without bounce: --pop is for things you press, where overshoot
+   reads as response. On text it just makes the words wobble as you start
+   reading them. */
+.turn {
+  display: flex;
+  gap: 0.7rem;
+  animation: arrive var(--base) var(--ease) both;
+}
+.turn__avatar {
+  display: grid;
+  place-items: center;
+  width: var(--avatar);
+  height: var(--avatar);
+  flex: none;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  margin-top: 1.35rem;           /* sits with the first line, not the label */
+}
+.turn__avatar svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  fill: var(--accent);
+}
+.turn__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1;
+}
+/* The system's voice: roles, table heads and provenance keys share it. */
+.turn__who {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.turn__bubble {
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
 
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
+/* You: brief, right-aligned, and the one teal-filled thing in the thread. */
+.turn--user { justify-content: flex-end; }
+.turn--user .turn__main { align-items: flex-end; flex: 0 1 auto; max-width: min(85%, 42ch); }
+.turn--user .turn__bubble {
+  background: linear-gradient(150deg, var(--accent-lift), var(--accent) 75%);
+  color: var(--on-accent);
+  border-radius: var(--r-lg) var(--r-lg) 6px var(--r-lg);
+  padding: 0.7rem 1rem;
+  box-shadow: var(--shadow-accent);
+}
+
+/* Analyst: the answer is a document -- no bubble around it. */
+.turn--assistant .turn__bubble { color: var(--ink); }
+
+/* Prose caps at a readable measure while tables and receipts keep the
+   full column: past ~75 characters the eye loses its place coming back
+   to the start of the next line.
+
+   In rem, not ch: `ch` is the width of the "0" glyph, which in a
+   proportional face is far wider than the average character -- 68ch
+   here computes to ~756px (~95 characters) and never binds. */
+.turn--assistant .turn__bubble > p,
+.turn--assistant .turn__bubble > ul,
+.turn--assistant .turn__bubble > ol,
+.turn--assistant .turn__bubble > blockquote,
+.turn--assistant .turn__bubble > h1,
+.turn--assistant .turn__bubble > h2,
+.turn--assistant .turn__bubble > h3 {
+  max-width: 35rem;              /* ≈ 70 characters at this size */
+}
+
+/* ── Markdown inside a turn ─────────────────────────────────────────── */
+.turn__bubble > :first-child { margin-top: 0; }
+.turn__bubble > :last-child { margin-bottom: 0; }
+.turn__bubble p { margin: 0 0 0.7rem; }
+.turn__bubble h1,
+.turn__bubble h2,
+.turn__bubble h3 {
+  color: var(--ink);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  margin: 1.35rem 0 0.5rem;
+}
+.turn__bubble h1 { font-size: 1.1rem; }
+.turn__bubble h2 { font-size: 1rem; }
+.turn__bubble h3 { font-size: 0.925rem; }
+.turn__bubble ul,
+.turn__bubble ol { margin: 0 0 0.7rem; padding-left: 1.15rem; }
+.turn__bubble li { margin: 0.25rem 0; }
+.turn__bubble li::marker { color: var(--accent); }
+.turn__bubble strong { color: var(--ink); font-weight: 700; }
+.turn__bubble a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.turn__bubble blockquote {
+  margin: 0.7rem 0;
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--accent-line);
+  color: var(--ink-2);
+}
+.turn__bubble pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  margin: 0 0 0.7rem;
+  box-shadow: var(--shadow-sm);
+}
+.turn__bubble pre code { background: none; padding: 0; font-size: 0.8rem; color: var(--ink); }
+/* The user's own bubble is violet, so code inside it can't be. */
+.turn--user .turn__bubble code {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--on-accent);
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────── */
+/* Kept deliberately calm: this is the part people check. */
+.table-wrap {
+  margin: 0.35rem 0 0.85rem;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+  min-width: max-content;
+}
+.table-wrap th,
+.table-wrap td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--line-2);
+  white-space: nowrap;
+}
+.table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.table-wrap tbody tr:last-child td { border-bottom: none; }
+/* Figures line up digit for digit -- these get compared column-wise. */
+.table-wrap tbody td { color: var(--ink); font-variant-numeric: tabular-nums; }
+.table-wrap tbody tr:hover td { background: var(--accent-wash); }
+
+/* ── Reading indicator ──────────────────────────────────────────────── */
+.reading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--ink-3);
+  font-size: 0.9rem;
+}
+.reading__dots {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.reading__dots i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: bob 900ms var(--ease) infinite;
+}
+.reading__dots i:nth-child(2) { animation-delay: 120ms; background: var(--amber); }
+.reading__dots i:nth-child(3) { animation-delay: 240ms; background: var(--clay); }
+
+/* ── Composer ───────────────────────────────────────────────────────── */
+.chat__dock {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0.85rem var(--pad) 1.1rem;
+}
+/* One control: the field and its send button are a single raised object. */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 0.4rem 0.4rem 0.4rem 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--base) var(--ease),
+              box-shadow var(--base) var(--ease);
+}
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+}
+.composer > textarea {
+  flex: 1;
+  font: inherit;
+  font-size: 0.925rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 0.55rem 0;
+  min-width: 0;
+  max-height: 12.5rem;
+}
+.composer > textarea::placeholder { color: var(--ink-3); }
+.composer > textarea:disabled { color: var(--ink-3); }
+
+.composer__send {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  flex: none;
+  color: var(--on-accent);
+  background: linear-gradient(150deg, var(--accent-lift), var(--accent) 75%);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: var(--shadow-accent);
+  transition: filter var(--fast) var(--ease),
+              transform var(--base) var(--pop),
+              box-shadow var(--fast) var(--ease);
+}
+.composer__send svg { width: 1rem; height: 1rem; }
+.composer__send:hover:not(:disabled) { transform: scale(1.08); filter: brightness(1.06); }
+.composer__send:active:not(:disabled) { transform: scale(0.94); }
+.composer__send:disabled {
+  background: var(--surface-3);
+  color: var(--ink-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.composer__send:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Provenance ─────────────────────────────────────────────────────── */
+/* Traceability is the product's whole point, so the receipt behind every
+   figure is always one click away, never buried in a log. */
+/* Sits flat and quiet rather than floating on its own shadow: this is
+   the answer's footer, not a separate object next to it. */
+.prov {
+  font-size: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface-2);
+  transition: border-color var(--base) var(--ease),
+              background var(--base) var(--ease);
+}
+.prov:hover { background: var(--surface); }
+.prov--open { border-color: var(--accent-line); background: var(--surface); }
+
+.prov--error {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--danger);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--r);
+  box-shadow: var(--shadow-sm);
+}
+
+.prov__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;               /* the id wraps rather than being clipped */
+  gap: 0.5rem;
+  font: inherit;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  padding: 0.6rem 0.85rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--fast) var(--ease);
+}
+.prov__toggle:hover { background: var(--accent-wash); }
+.prov__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.prov__caret {
+  font-size: 0.55rem;
+  color: var(--accent);
+  transition: transform var(--base) var(--pop);
+}
+.prov--open .prov__caret { transform: rotate(90deg); }
+.prov__name {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+.prov__snap {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--accent);
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Height animates for real: 0fr → 1fr, no measuring, no jump. */
+.prov__drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--base) var(--ease);
+}
+.prov--open .prov__drawer { grid-template-rows: 1fr; }
+.prov__clip { overflow: hidden; }
+
+.prov__body {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, auto) 1fr;
+  gap: 0.45rem 1.1rem;
+  margin: 0;
+  padding: 0.85rem;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.prov__body dt {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 0.15rem;
+}
+.prov__body dd { margin: 0; color: var(--ink); word-break: break-word; }
+.prov__body code { font-size: 0.75rem; }
+/* Table names are identifiers, so each gets its own chip rather than
+   running together in one comma-separated line. `anywhere` (not
+   break-word) is what lets a long name shrink inside a flex item
+   instead of pushing past the card edge. */
+.prov__tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.prov__tables code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────── */
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-10px) scale(0.9); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat__log { scroll-behavior: auto; }
+  .turn,
+  .chat__empty-mark { animation: none; }
+  .chip:hover,
+  .chip:active,
+  .composer__send:hover:not(:disabled),
+  .composer__send:active:not(:disabled),
+  .chat__header:hover .chat__brand { transform: none; }
+  .chip:hover .chip__dot { transform: none; }
+  .reading__dots i { animation: none; }
+  .prov__drawer { transition: none; }
+}
+
+/* ── Small screens ──────────────────────────────────────────────────── */
+@media (max-width: 40rem) {
+  .chip { flex-basis: 100%; }
+  .turn--user .turn__main { max-width: 90%; }
+  .prov__snap { font-size: 0.65rem; }
+}
+
+/* On a phone the two-column receipt leaves no room for values, so the
+   keys sit above what they label. */
+@media (max-width: 30rem) {
+  .prov__body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
   }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
-  }
+  .prov__body dt { padding-top: 0.6rem; }
+  .prov__body dt:first-child { padding-top: 0; }
 }
