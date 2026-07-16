@@ -10,7 +10,6 @@ dist/
 
 # Environment
 .env
-.env.*
 *.env
 
 # Node
@@ -24,7 +23,7 @@ build/
 *.parquet
 *.avro
 data/raw/
-data/powerbi/
+powerbi/
 warehouse/
 
 # OS
