@@ -22,7 +22,9 @@ startup to every question. PyIceberg + DuckDB answers in milliseconds.
 """
 
 import datetime as dt
+import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,8 +59,47 @@ if os.name == "nt":
     _pyi_pyarrow.PyArrowFileIO.parse_location = staticmethod(_windows_safe_parse_location)
 
 ROOT = Path(__file__).resolve().parents[2]
-WAREHOUSE = Path(os.environ.get("ICEBERG_WAREHOUSE", ROOT / "warehouse")).resolve()
 NAMESPACE = os.environ.get("ICEBERG_NAMESPACE", "db")
+
+log = logging.getLogger("agent.lakehouse")
+
+_WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _resolve_warehouse() -> Path:
+    """Locate the warehouse, tolerating a config written on another OS.
+
+    Path.resolve() is a trap for both of the shapes ICEBERG_WAREHOUSE arrives in:
+
+      - "D:/project/warehouse" is NOT absolute on POSIX, so resolve() silently
+        appends it to the CWD and yields
+        "/home/you/project/D:/project/warehouse" -- a path that cannot exist, and
+        an error message that blames a missing warehouse rather than the config.
+      - "warehouse" resolves against the CWD too, so the agent only works when
+        launched from the repo root.
+
+    Both are anchored to the repo root instead, and a path from a foreign OS is
+    ignored with a warning rather than being pasted onto the CWD.
+    """
+    raw = (os.environ.get("ICEBERG_WAREHOUSE") or "").strip()
+    default = (ROOT / "warehouse").resolve()
+
+    if not raw:
+        return default
+
+    if os.name != "nt" and _WINDOWS_DRIVE.match(raw):
+        log.warning(
+            "ICEBERG_WAREHOUSE=%r is a Windows path but this is not Windows; "
+            "falling back to %s. Set ICEBERG_WAREHOUSE to a path valid on this "
+            "machine (a relative path such as 'warehouse' is portable).",
+            raw, default)
+        return default
+
+    path = Path(raw)
+    return path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+
+
+WAREHOUSE = _resolve_warehouse()
 
 
 class LakehouseError(RuntimeError):
@@ -171,20 +212,38 @@ class Lakehouse:
         return sorted((self._wrap(s) for s in self.table(name).metadata.snapshots),
                       key=lambda s: s.committed_at)
 
-    def snapshot_as_of(self, name: str, as_of: dt.date) -> Snapshot:
-        """Latest snapshot committed on or before `as_of` -- Iceberg time travel.
+    def snapshot_as_of(self, name: str, as_of: dt.date | dt.datetime) -> Snapshot:
+        """Latest snapshot committed at or before `as_of` -- Iceberg time travel.
 
         Answers "what did the data look like on the 3rd?" with the state the table
         was ACTUALLY in then, rather than filtering today's data by date -- which
         would silently include rows backfilled since.
+
+        Accepts a datetime as well as a date, because a date alone cannot address
+        the table finely enough. A date means "end of that day", so when several
+        commits land on one day -- which is exactly what a daily batch load
+        produces -- every date on or after them resolves to the LAST one. The
+        earlier snapshots become unreachable, and a time-travel comparison
+        silently returns "nothing changed" instead of the truth. A timestamp can
+        name any commit.
         """
-        cutoff = dt.datetime.combine(as_of, dt.time.max, tzinfo=dt.timezone.utc)
-        eligible = [s for s in self.history(name) if s.committed_at <= cutoff]
+        history = self.history(name)
+        if not history:
+            raise LakehouseError(f"Table {name} has no snapshots -- it is empty.")
+
+        if isinstance(as_of, dt.datetime):
+            cutoff = (as_of if as_of.tzinfo
+                      else as_of.replace(tzinfo=dt.timezone.utc))
+        else:
+            cutoff = dt.datetime.combine(as_of, dt.time.max, tzinfo=dt.timezone.utc)
+
+        eligible = [s for s in history if s.committed_at <= cutoff]
         if not eligible:
-            earliest = self.history(name)[0].committed_at.date()
             raise LakehouseError(
-                f"No snapshot of {name} existed on {as_of}. "
-                f"The table's first snapshot is {earliest}.")
+                f"No snapshot of {name} existed at {as_of}. This table's "
+                f"snapshots run from {history[0].committed_at.isoformat()} to "
+                f"{history[-1].committed_at.isoformat()} -- pick a moment inside "
+                f"that range.")
         return eligible[-1]
 
     def arrow(self, name: str, snapshot_id: int | None = None) -> pa.Table:

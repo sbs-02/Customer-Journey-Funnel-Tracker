@@ -14,6 +14,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import jsonschema
+
 from agent import metrics
 from agent.metrics import MetricError
 
@@ -29,6 +31,8 @@ class Tool:
 
 
 # JSON-Schema fragments reused across tools.
+_MEASURES = ["visit", "lead", "opportunity", "orders", "revenue"]
+
 _WEEK_ARGS = {
     "iso_year": {
         "type": "integer",
@@ -101,20 +105,32 @@ TOOLS: list[Tool] = [
     Tool(
         name="running_total",
         description=(
-            "Running (cumulative) total of a measure within a period. The total "
-            "resets at each period boundary. Use for 'running total', "
-            "'cumulative', 'month to date', 'year to date'."
+            "Running (cumulative) total of one or more measures within a period. "
+            "The total resets at each period boundary. Use for 'running total', "
+            "'cumulative', 'month to date', 'year to date'. To cover several "
+            "measures at once, pass a list to 'measure' -- one call is enough."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "measure": {
-                    "type": "string",
-                    "enum": ["visit", "lead", "opportunity", "orders", "revenue"],
+                    "description": ("A single measure, or a list of measures to "
+                                    "report side by side."),
+                    "anyOf": [
+                        {"type": "string", "enum": _MEASURES},
+                        {"type": "array",
+                         "items": {"type": "string", "enum": _MEASURES},
+                         "minItems": 1, "maxItems": 5},
+                    ],
                 },
                 "period": {
                     "type": "string", "enum": ["wtd", "mtd", "ytd"],
                     "description": "Reset boundary: week, month or year to date.",
+                },
+                "year": {
+                    "type": "integer",
+                    "description": ("Restrict to a single calendar year, e.g. 2025. "
+                                    "Omit for the most recent data."),
                 },
             },
             "required": ["measure"],
@@ -152,7 +168,11 @@ TOOLS: list[Tool] = [
             "properties": {
                 "as_of_date": {
                     "type": "string",
-                    "description": "Date to travel to, YYYY-MM-DD.",
+                    "description": (
+                        "Moment to travel to: YYYY-MM-DD, or a full ISO "
+                        "timestamp (2026-07-16T15:23:00) when several snapshots "
+                        "share a day and you need to name one exactly."
+                    ),
                 },
                 "stage": {"type": "string", "enum": ["visit", "lead", "opportunity"]},
             },
@@ -185,6 +205,177 @@ TOOLS: list[Tool] = [
 TOOLS_BY_NAME = {t.name: t for t in TOOLS}
 
 
+# Names the model reaches for that mean a parameter we really have under another
+# name. Every other tool keys weeks on the ISO calendar, so the model says
+# "iso_year" out of habit; running_total's year filter is the civil calendar.
+# Renaming here beats carrying two near-identical parameters in the schema.
+ARG_ALIASES: dict[str, dict[str, str]] = {
+    "running_total": {"iso_year": "year"},
+}
+
+
+def coerce_arguments(tool: Tool, arguments: dict[str, Any] | None) -> dict:
+    """Normalise what the model actually sends into what the schema demands.
+
+    Small models do not emit clean JSON-Schema-conformant arguments. Three habits
+    break an unforgiving validator, and all three are the model being reasonable
+    rather than broken, so we absorb them here instead of failing the call:
+
+      - null for an omitted optional: {"iso_year": null} means "no preference",
+        NOT "the year None". Dropping the key restores the handler default.
+      - plural enums: "visits" for the "visit" stage. The word is right, the
+        grammar is ours.
+      - stringified integers: "2025" for iso_year, because JSON typing is a
+        detail the model is not thinking about.
+
+    This MUST run before schema validation, not after. That ordering is the whole
+    bug this function exists to fix.
+    """
+    props: dict = (tool.parameters or {}).get("properties", {})
+    aliases = ARG_ALIASES.get(tool.name, {})
+    cleaned: dict = {}
+
+    for key, value in (arguments or {}).items():
+        if value is None:                       # omitted optional -- use the default
+            continue
+
+        key = aliases.get(key, key)
+
+        # An argument this tool does not have. Models hand back fields they saw in
+        # an earlier tool RESULT -- snapshot_id, snapshot_committed_at -- as though
+        # provenance were an input. Passing it through would raise TypeError in the
+        # handler and turn a nearly-correct call into a hard failure, so drop it
+        # and let the rest of the call stand or fall on its own merits.
+        if key not in props:
+            log.warning("tool %s: ignoring unknown argument %r", tool.name, key)
+            continue
+
+        spec = props[key]
+        expected = spec.get("type")
+        enum = _enum_of(spec)
+        allows_list = _allows_list(spec)
+
+        # A one-element list where only a scalar is allowed: the model was
+        # thinking "a list of measures" and found one. Unwrap rather than reject.
+        if not allows_list and isinstance(value, list) and len(value) == 1:
+            value = value[0]
+
+        if isinstance(value, list):
+            value = [_coerce_scalar(key, v, expected, enum) for v in value]
+        else:
+            value = _coerce_scalar(key, value, expected, enum)
+
+        cleaned[key] = value
+
+    return cleaned
+
+
+def _coerce_scalar(key: str, value: Any, expected: Any, enum: list | None) -> Any:
+    """Nudge one value towards what the schema wants. Never forces it."""
+    if enum and isinstance(value, str) and value not in enum:
+        match = _match_enum(value, enum)
+        if match is not None:
+            log.info("coerced %s=%r -> %r", key, value, match)
+            return match
+    elif expected == "integer" and isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            pass                                # let the validator report it properly
+    return value
+
+
+def _enum_of(spec: dict) -> list | None:
+    """The allowed values for a parameter, looking inside anyOf/items.
+
+    running_total's `measure` is an anyOf(string, array-of-string), so the enum
+    is not at the top level of the spec. Without this, "visits" would stop being
+    corrected to "visit" the moment a parameter learned to accept a list.
+    """
+    if "enum" in spec:
+        return spec["enum"]
+    for branch in spec.get("anyOf", []):
+        if "enum" in branch:
+            return branch["enum"]
+        if "enum" in branch.get("items", {}):
+            return branch["items"]["enum"]
+    if "enum" in spec.get("items", {}):
+        return spec["items"]["enum"]
+    return None
+
+
+def _allows_list(spec: dict) -> bool:
+    if spec.get("type") == "array":
+        return True
+    return any(b.get("type") == "array" for b in spec.get("anyOf", []))
+
+
+def _match_enum(value: str, enum: list) -> Any | None:
+    """Best-effort map of a near-miss onto an allowed enum value.
+
+    Case-insensitive first, then a naive de-pluralisation. Deliberately
+    conservative: it only ever returns a value the schema already allows, so the
+    worst case is that we fail validation exactly as we would have anyway.
+    """
+    folded = value.strip().lower()
+    options = {str(o).lower(): o for o in enum}
+
+    if folded in options:
+        return options[folded]
+    if folded.endswith("s") and folded[:-1] in options:     # "visits" -> "visit"
+        return options[folded[:-1]]
+    if f"{folded}s" in options:                             # "order"  -> "orders"
+        return options[f"{folded}s"]
+    return None
+
+
+def validate_arguments(tool: Tool, arguments: dict) -> str | None:
+    """Check arguments against the tool's JSON Schema.
+
+    Returns a human-readable reason on failure, or None when valid. We validate
+    here -- after coercion -- rather than letting the MCP SDK do it at the
+    protocol edge, because the SDK validates the RAW arguments and reports the
+    failure as an opaque plain-text string the client cannot parse.
+    """
+    try:
+        jsonschema.validate(instance=arguments, schema=tool.parameters)
+    except jsonschema.ValidationError as exc:
+        where = ".".join(str(p) for p in exc.path) or "arguments"
+        return f"{where}: {exc.message}"
+    return None
+
+
+def _fix_hint(tool: Tool, cleaned: dict) -> str:
+    """Turn a validation failure into the call the model should make instead.
+
+    The common failure by far is asking for several measures at once, because
+    that is how the USER asked the question. Spelling out the fan-out is what
+    actually gets the retry right.
+    """
+    props = tool.parameters.get("properties", {})
+
+    for key, value in cleaned.items():
+        if isinstance(value, list) and key in props and "enum" in props[key]:
+            others = {k: v for k, v in cleaned.items() if k != key}
+            calls = ", ".join(
+                f"{tool.name}({key}={v!r}"
+                + (", " + ", ".join(f"{k}={o!r}" for k, o in others.items()) if others else "")
+                + ")"
+                for v in value)
+            return (
+                f"{tool.name} takes ONE {key} per call and you passed {len(value)}. "
+                f"Do not retry with a list. Instead make {len(value)} separate "
+                f"calls now, in one go: {calls}. Then combine the results into a "
+                f"single table for the user.")
+
+    missing = [k for k in tool.parameters.get("required", []) if k not in cleaned]
+    if missing:
+        return (f"Required argument(s) {', '.join(missing)} were missing. Retry "
+                f"{tool.name} with them set.")
+
+    return f"Check the argument types and allowed values for {tool.name} and retry once."
+
+
 def dispatch(name: str, arguments: dict[str, Any]) -> dict:
     """Run a tool by name. This is the ONLY path from the model to the data.
 
@@ -197,10 +388,20 @@ def dispatch(name: str, arguments: dict[str, Any]) -> dict:
         return {"error": f"Unknown tool {name!r}. "
                          f"Available: {', '.join(TOOLS_BY_NAME)}"}
 
-    # Drop nulls: Ollama frequently sends {"iso_year": null} for omitted optional
-    # args, which would override the "latest complete week" default with None and
-    # look like an explicit request for week None.
-    cleaned = {k: v for k, v in (arguments or {}).items() if v is not None}
+    cleaned = coerce_arguments(tool, arguments)
+
+    invalid = validate_arguments(tool, cleaned)
+    if invalid is not None:
+        log.warning("tool %s rejected arguments %s: %s", name, cleaned, invalid)
+        return {"error": f"Invalid arguments for {name} -- {invalid}",
+                "tool": name,
+                "arguments_received": arguments,
+                # The model reads the tool result, not the system prompt, when it
+                # decides what to do next. An error that says only "invalid" gets
+                # narrated as a failure; an error that says exactly which call to
+                # make next gets retried correctly.
+                "how_to_fix": _fix_hint(tool, cleaned),
+                "valid_arguments": tool.parameters.get("properties", {})}
 
     log.info("tool call: %s(%s)", name, cleaned)
     try:

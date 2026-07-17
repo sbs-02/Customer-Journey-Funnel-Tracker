@@ -88,6 +88,61 @@ def test_conversion_rate_with_no_traffic_is_none_not_zero():
     assert metrics._pct(0, 10) == 0.0     # a real zero IS zero
 
 
+def test_period_labels_are_normalised_to_the_key_format():
+    """The model and the user both write periods loosely. Needs no warehouse."""
+    assert metrics._normalise_period("2026-3", "month") == "2026-03"
+    assert metrics._normalise_period("2026-03", "month") == "2026-03"
+    assert metrics._normalise_period("q1 2026", "quarter") == "2026-Q1"
+    assert metrics._normalise_period("2026-Q1", "quarter") == "2026-Q1"
+    assert metrics._normalise_period("2026-w5", "week") == "2026-W05"
+    assert metrics._normalise_period("2026", "year") == "2026"
+
+
+def test_assistant_turn_carries_only_fields_groq_accepts():
+    """The regression test for the bug that broke every tool-backed answer.
+
+    message.model_dump() round-trips SDK-only fields -- annotations, audio,
+    refusal, function_call. Groq rejects the request outright:
+
+        400 'messages.N' : property 'annotations' is unsupported
+
+    Only ever on the SECOND call, once an assistant turn is in the history, which
+    is why questions needing data failed while chit-chat worked.
+    """
+    from openai.types.chat import ChatCompletionMessage
+    from openai.types.chat.chat_completion_message_tool_call import (
+        ChatCompletionMessageToolCall, Function)
+
+    from agent.server import _assistant_message
+
+    message = ChatCompletionMessage(
+        role="assistant", content=None,
+        tool_calls=[ChatCompletionMessageToolCall(
+            id="call_1", type="function",
+            function=Function(name="funnel_yoy", arguments='{"stage": "lead"}'))])
+
+    # Guard the premise: if the SDK ever stops emitting these, this test should
+    # tell us rather than quietly passing for the wrong reason.
+    assert "annotations" in message.model_dump()
+
+    payload = _assistant_message(message)
+
+    assert set(payload) == {"role", "content", "tool_calls"}
+    assert payload["content"] == ""          # Groq wants the key present, not null
+    assert payload["tool_calls"][0]["id"] == "call_1"
+    assert payload["tool_calls"][0]["function"]["name"] == "funnel_yoy"
+
+
+def test_plain_assistant_turn_has_no_tool_calls_key():
+    from openai.types.chat import ChatCompletionMessage
+
+    from agent.server import _assistant_message
+
+    payload = _assistant_message(
+        ChatCompletionMessage(role="assistant", content="235 leads."))
+    assert payload == {"role": "assistant", "content": "235 leads."}
+
+
 def _minimal_args(tool) -> dict:
     """Smallest valid argument set for each tool."""
     return {
@@ -96,6 +151,9 @@ def _minimal_args(tool) -> dict:
         "weekly_trend": {"measure": "lead", "weeks": 4},
         "running_total": {"measure": "orders", "period": "mtd"},
         "top_dimension": {"dimension": "channel"},
+        "period_compare": {"measure": "revenue"},
+        "daily_trend": {"measure": "lead", "days": 7},
+        "funnel_anomalies": {},
         "compare_as_of": {"as_of_date": dt.date.today().isoformat()},
         "explain_scan": {},
         "snapshot_history": {},

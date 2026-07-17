@@ -16,20 +16,63 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 random.seed(43)   # fixed seed (distinct from generate_data.py's 42) for reproducible incremental batches
 
-# Re-use project parameters from your main data generator
+# --- Channel config (2026 changes) ---
 CHANNELS = ["Paid Search", "Email", "Organic", "Social"]
-LEAD_RATE = {"Paid Search": .18, "Email": .30, "Organic": .22, "Social": .12}
-OPP_RATE = .30
-ORDER_RATE = .35
-PRODUCTS = [("Starter Plan", "Software", 29.0), ("Pro Plan", "Software", 99.0),
-            ("Enterprise Plan", "Software", 299.0)]
 
-# Simulate fresh events arriving right after the old tracking end date
+# 2025 rates: Paid 18%, Email 30%, Organic 22%, Social 12%
+# 2026 changes: Email up (better targeting), Paid Search down (competition), Social up slightly
+LEAD_RATE = {"Paid Search": .12, "Email": .42, "Organic": .25, "Social": .15}
+
+# 2025: OPP_RATE=0.30, ORDER_RATE=0.35
+# 2026: better sales process, higher close rate
+OPP_RATE = .40
+ORDER_RATE = .42
+
+# 2026 product mix: Enterprise gets a price bump to $349
+PRODUCTS = [
+    ("Starter Plan", "Software", 29.0),
+    ("Pro Plan", "Software", 99.0),
+    ("Enterprise Plan", "Software", 299.0),
+]
+
+# Channel traffic share shifts throughout 2026:
+#   Q1: Paid Search still dominant but shrinking
+#   Q2-Q3: Social surge (viral campaign), Email grows
+#   Q4: Social stays high, Paid Search stabilises at lower level
+def channel_weights(month: int) -> list[float]:
+    """Return normalised [Paid Search, Email, Organic, Social] weights for the month."""
+    if month <= 2:          # Jan-Feb: budget cut, Paid Search still biggest share
+        return [0.35, 0.20, 0.30, 0.15]
+    elif month <= 4:        # Mar-Apr: Social starts ramping
+        return [0.25, 0.25, 0.25, 0.25]
+    elif month <= 6:        # May-Jun: viral Social campaign peaks
+        return [0.15, 0.25, 0.20, 0.40]
+    elif month <= 9:        # Jul-Oct: Social dominant, Paid Search minimal
+        return [0.12, 0.28, 0.20, 0.40]
+    else:                   # Nov-Dec: budget flush, Paid Search climbs back a bit
+        return [0.20, 0.25, 0.20, 0.35]
+
+
 NEW_START = dt.date(2026, 1, 1)
 NEW_END = dt.date(2026, 12, 31)
 
-# 2025 exits at DAILY_VISITS * 1.25 growth; keep the new batch on that run-rate.
-NEW_DAILY_VISITS = int(int(os.environ.get("DAILY_VISITS", "120")) * 1.25)
+# --- 2026 daily visits: Q1 dip, Q2-Q3 surge, Q4 taper ---
+# 2025 exited at DAILY_VISITS * 1.25 = 150.
+# 2026: Jan-Feb 100 (-33%), Mar-Apr 140, May-Aug 180 (+20% surge), Sep-Oct 160, Nov-Dec 150
+def daily_visits_for_date(d: dt.date) -> int:
+    """Base daily visit count reflecting 2026's business trajectory."""
+    m = d.month
+    if m <= 2:
+        base = 100       # Q1 dip: budget cut
+    elif m <= 4:
+        base = 140       # Q2 ramp
+    elif m <= 8:
+        base = 180       # Q2-Q3 surge: viral Social campaign
+    elif m <= 10:
+        base = 160       # early autumn taper
+    else:
+        base = 150       # Q4 stabilise
+    return base
 
 
 def load_dim_date():
@@ -52,8 +95,6 @@ def extend_dim_date(rows, date_key, next_key, new_dates):
     for d in new_dates:
         iso = d.isoformat()
         if iso not in date_key:
-            # Built by the shared dim_date_row() so the incremental batch cannot
-            # emit a different column set than generate_data.py's initial load.
             rows.append(dim_date_row(next_key, d))
             date_key[iso] = next_key
             next_key += 1
@@ -75,7 +116,12 @@ def daterange(a, b):
         d += dt.timedelta(days=1)
 
 
-print("--- Generating new event batch data ---")
+def weighted_choice(items: list, weights: list[float]):
+    """Pick from items according to normalised weights."""
+    return random.choices(items, weights=weights, k=1)[0]
+
+
+print("--- Generating new event batch data (2026 with business changes) ---")
 
 new_dates = list(daterange(NEW_START, NEW_END))
 
@@ -88,54 +134,66 @@ orders_new_f = open(OUT / "fact_orders_new.csv", "w", newline="")
 ow = csv.writer(orders_new_f)
 ow.writerow(["order_line_key", "date_key", "customer_key", "channel_key", "product_key",
              "revenue", "quantity", "order_ts"])
-order_id = 100000   # high starting index, same collision-avoidance pattern as event_id
+order_id = 100000
+
+# Product weight shifts: more Pro/Enterprise in 2026 (upselling push)
+# 2025 was uniform random across 3 products.
+# 2026: Starter 30%, Pro 45%, Enterprise 25%
+PRODUCT_WEIGHTS = [0.30, 0.45, 0.25]
 
 with open(OUT / "fact_funnel_event_new.csv", "w", newline="") as f:
     w = csv.writer(f)
-    # Matches FACT_FUNNEL_EVENT_SCHEMA in schemas.py
     w.writerow(["event_key", "date_key", "customer_key", "channel_key", "stage", "event_ts"])
 
-    event_id = 500000  # Pick a high starting index to prevent any potential primary key collision
+    event_id = 500000
 
     for current_date in new_dates:
         dk = date_key[current_date.isoformat()]
+        month = current_date.month
 
-        # Same gentle seasonal wave as generate_data.py, so 2026 doesn't look
-        # artificially flat next to the wavy 2022-2025 history.
-        season = 1 + 0.15 * ((current_date.isocalendar().week % 8) / 8)
-        visits = int(NEW_DAILY_VISITS * season * random.uniform(.9, 1.1))
+        # Seasonal wave: different from 2025 -- stronger Q2 (renewal season) and Q4 (budget flush)
+        week = current_date.isocalendar().week
+        if month in (5, 6):                    # Q2 peak (renewals)
+            season = 1.15
+        elif month in (11, 12):                # Q4 peak (budget flush)
+            season = 1.10
+        elif month in (1, 2):                  # Q1 trough
+            season = 0.85
+        else:
+            season = 1.0
+
+        base_visits = daily_visits_for_date(current_date)
+        visits = int(base_visits * season * random.uniform(0.88, 1.12))
+
+        # Channel weights shift throughout the year
+        cw = channel_weights(month)
 
         for _ in range(visits):
-            cust_key = random.randint(0, 2999)      # Pointing to keys from dim_customer
-            chan = random.choice(CHANNELS)
+            cust_key = random.randint(0, 2999)
+            chan = weighted_choice(CHANNELS, cw)
             chan_key = CHANNELS.index(chan)
 
-            # Generate a timestamp for the event.
-            # Use "%Y-%m-%d %H:%M:%S" (space-separated) to match the format
-            # generate_data.py produces via its raw datetime -> csv writer,
-            # so event_ts is consistent across both fact_funnel_event.csv
-            # and fact_funnel_event_new.csv.
             ts = dt.datetime.combine(current_date, dt.time(random.randint(0, 23), random.randint(0, 59)))
             ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
 
-            # 1. Write visit stage
+            # 1. Visit
             w.writerow([event_id, dk, cust_key, chan_key, "visit", ts_str])
             event_id += 1
 
-            # 2. Write lead stage conditionally
+            # 2. Lead (using 2026 rates -- higher for Email, lower for Paid Search)
             if random.random() < LEAD_RATE[chan]:
                 w.writerow([event_id, dk, cust_key, chan_key, "lead", ts_str])
                 event_id += 1
 
-                # 3. Write opportunity stage conditionally
+                # 3. Opportunity (2026: 40% -- better sales team)
                 if random.random() < OPP_RATE:
                     w.writerow([event_id, dk, cust_key, chan_key, "opportunity", ts_str])
                     event_id += 1
 
-                    # 4. Write order conditionally
+                    # 4. Order (2026: 42% -- better close rate)
                     if random.random() < ORDER_RATE:
-                        prod = random.randrange(len(PRODUCTS))
-                        qty = random.randint(1, 3)
+                        prod = random.choices(range(len(PRODUCTS)), weights=PRODUCT_WEIGHTS, k=1)[0]
+                        qty = random.randint(1, 4)     # up to 4 units (was 3) -- bulk deals
                         ow.writerow([order_id, dk, cust_key, chan_key, prod,
                                      PRODUCTS[prod][2] * qty, qty, ts_str])
                         order_id += 1

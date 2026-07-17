@@ -1,13 +1,15 @@
 """
 MCP client. Speaks the protocol to mcp_server.py over stdio and adapts the tool
-schemas into the shape Ollama's function-calling API expects.
+schemas into the shape the LLM's function-calling API expects.
 
 This is the piece that makes the system genuinely MCP rather than "a Python
-function passed to ollama.chat". The FastAPI backend never imports the tool
+function passed directly to the LLM". The FastAPI backend never imports the tool
 handlers directly -- every call goes over the protocol.
 """
 
+import json
 import logging
+import os
 import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -18,6 +20,7 @@ from mcp.client.stdio import stdio_client
 log = logging.getLogger("agent.mcp_client")
 
 SERVER_SCRIPT = Path(__file__).resolve().parent / "mcp_server.py"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class MCPClient:
@@ -30,9 +33,23 @@ class MCPClient:
 
     async def start(self) -> None:
         self._stack = AsyncExitStack()
+        # env/cwd are both explicit on purpose.
+        #
+        # With env=None the MCP SDK does NOT inherit our environment -- it passes
+        # a sanitised whitelist (HOME, PATH, SHELL, TERM, USER, LOGNAME) and drops
+        # everything else. ICEBERG_WAREHOUSE, GROQ_* and MAX_TOOL_ROWS would
+        # never reach the tool subprocess, so the server would quietly fall back
+        # to defaults and read the wrong warehouse. That is invisible wherever
+        # config comes from real env vars rather than a .env file (Docker,
+        # systemd, CI).
+        #
+        # cwd is pinned to the repo root because the server's load_dotenv() and
+        # the default warehouse path are both resolved relative to it.
         params = StdioServerParameters(
             command=sys.executable,
             args=[str(SERVER_SCRIPT)],
+            env=os.environ.copy(),
+            cwd=str(ROOT),
         )
         read, write = await self._stack.enter_async_context(stdio_client(params))
         self._session = await self._stack.enter_async_context(ClientSession(read, write))
@@ -48,8 +65,9 @@ class MCPClient:
     def tool_names(self) -> list[str]:
         return [t.name for t in self._tools]
 
-    def ollama_tool_specs(self) -> list[dict]:
-        """Translate MCP tool definitions into Ollama's function-calling schema."""
+    def openai_tool_specs(self) -> list[dict]:
+        """Translate MCP tool definitions into the OpenAI-compatible function-
+        calling schema that Groq expects."""
         return [
             {
                 "type": "function",
@@ -64,8 +82,6 @@ class MCPClient:
 
     async def call(self, name: str, arguments: dict) -> dict:
         """Invoke a tool over MCP and unwrap its JSON payload."""
-        import json
-
         if self._session is None:
             return {"error": "MCP session is not started."}
         try:
@@ -79,5 +95,12 @@ class MCPClient:
                 try:
                     return json.loads(block.text)
                 except json.JSONDecodeError:
-                    return {"error": "MCP returned non-JSON", "raw": block.text}
-        return {"error": "MCP returned no content"}
+                    # The server should always send JSON, but the MCP SDK itself
+                    # emits bare text for protocol-level failures (input
+                    # validation, an uncaught handler error). Surfacing that text
+                    # as the error message beats the old "MCP returned non-JSON",
+                    # which told the model -- and the user -- nothing actionable.
+                    log.error("non-JSON from tool %s: %s", name, block.text)
+                    return {"error": block.text.strip() or "MCP returned non-JSON",
+                            "tool": name}
+        return {"error": "MCP returned no content", "tool": name}
