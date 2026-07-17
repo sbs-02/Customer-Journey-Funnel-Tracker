@@ -63,3 +63,14 @@ try:
 except Exception as e:
     print(f"\nError running the script: {e}")
     print("Ensure 'data/raw/fact_funnel_event_new.csv' exists before appending.")
+
+# Append the new orders batch (plain append -- fact_orders keeps its
+# original daily partition scheme from load_iceberg.py, no evolution needed here)
+try:
+    new_orders_raw = load_csv("fact_orders_new", FACT_SCHEMAS["fact_orders"])
+    new_orders = new_orders_raw.withColumn("order_ts", new_orders_raw["order_ts"].cast("timestamp"))
+    new_orders.writeTo("local.db.fact_orders").append()
+    print("Successfully appended the new orders batch.")
+except Exception as e:
+    print(f"\nError appending new orders: {e}")
+    print("Ensure 'data/raw/fact_orders_new.csv' exists before appending.")
