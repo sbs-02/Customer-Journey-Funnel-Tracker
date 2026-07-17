@@ -20,6 +20,7 @@ import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from duckdb import df
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -324,16 +325,19 @@ def weekly_trend(measure: str = "lead", weeks: int = 12) -> dict:
     df = lakehouse.query(sql, arrow, params).sort_values(["iso_year", "iso_week"])
 
     points = []
+
     for r in df.itertuples():
-        value = None if r.value is None else float(r.value)
+        value = None if pd.isna(r.value) else float(r.value)
+        prior_week = None if pd.isna(r.prior_week) else float(r.prior_week)
+        prior_year = None if pd.isna(r.prior_year) else float(r.prior_year)
         points.append({
             "week": f"{int(r.iso_year)}-W{int(r.iso_week):02d}",
             "week_start_date": _as_date(r.week_start_date).isoformat(),
             "value": value,
-            "wow_pct": _change(value, None if r.prior_week is None else float(r.prior_week)),
-            "yoy_pct": _change(value, None if r.prior_year is None else float(r.prior_year)),
-            "prior_year_value": None if r.prior_year is None else float(r.prior_year),
-        })
+            "wow_pct": _change(value, prior_week),
+            "yoy_pct": _change(value, prior_year),
+            "prior_year_value": prior_year,
+    })
 
     covered = ({"start": points[0]["week_start_date"],
                 "end": points[-1]["week_start_date"]} if points else {})
