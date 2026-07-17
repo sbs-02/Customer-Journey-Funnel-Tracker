@@ -41,9 +41,15 @@ from agent.prompts import (TOOL_RESULT_REMINDER, build_suggested_prompts,
 
 load_dotenv()
 
+_LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+_LOG_DATEFMT = "%H:%M:%S"
+_LOG_FILE = Path(__file__).resolve().parents[2] / "server.log"
+
 logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
-                    datefmt="%H:%M:%S")
+                    format=_LOG_FORMAT, datefmt=_LOG_DATEFMT)
+_file_handler = logging.FileHandler(_LOG_FILE, mode="a", encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT))
+logging.getLogger().addHandler(_file_handler)
 log = logging.getLogger("agent.server")
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -52,6 +58,20 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 CORS_ORIGINS = [o.strip() for o in
                 os.environ.get("CORS_ORIGINS", "http://localhost:5173").split(",")
                 if o.strip()]
+
+# Available models for the model picker. Each entry is (id, display_name, notes).
+# Only models that support tool calling on Groq are listed here.
+MODELS = [
+    {"id": "llama-3.1-8b-instant",    "name": "Llama 3.1 8B",    "note": "Fast, lightweight"},
+    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B",   "note": "Strong reasoning"},
+    {"id": "llama-3.1-70b-versatile", "name": "Llama 3.1 70B",   "note": "Reliable, proven"},
+    {"id": "meta-llama/llama-4-scout-17b-16e-instruct", "name": "Llama 4 Scout", "note": "Latest Llama 4"},
+    {"id": "qwen/qwen3-32b",         "name": "Qwen 3 32B",      "note": "Balanced performance"},
+    {"id": "qwen/qwen3.6-27b",       "name": "Qwen 3.6 27B",    "note": "Updated Qwen"},
+    {"id": "openai/gpt-oss-120b",     "name": "GPT-OSS 120B",    "note": "Largest, most capable"},
+    {"id": "openai/gpt-oss-20b",      "name": "GPT-OSS 20B",     "note": "Compact GPT"},
+]
+MODEL_IDS = {m["id"] for m in MODELS}
 
 # Rounds in which the model is ALLOWED to call tools. Three, not two: a first
 # call, one retry when that call comes back with an "invalid arguments" error,
@@ -131,6 +151,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     history: list[Message] = Field(default_factory=list, max_length=20)
+    model: str | None = Field(default=None, max_length=100)
 
 
 class ToolCall(BaseModel):
@@ -147,11 +168,20 @@ class ChatResponse(BaseModel):
 
 @app.get("/health")
 async def health() -> dict:
-    return {
+    log.info("health check requested")
+    result = {
         "status": "ok",
         "model": GROQ_MODEL,
         "mcp_tools": mcp_client.tool_names,
     }
+    log.info("health check: model=%s, tools=%s", GROQ_MODEL, ", ".join(mcp_client.tool_names))
+    return result
+
+
+@app.get("/models")
+async def models() -> dict:
+    log.info("models list requested")
+    return {"models": MODELS, "default": GROQ_MODEL}
 
 
 @app.get("/suggested-prompts")
@@ -162,12 +192,15 @@ async def suggested_prompts() -> dict:
     handlers. If history is unavailable the fallback starters need no snapshot,
     so a cold warehouse costs us a nice-to-have rather than the whole page.
     """
+    log.info("suggested_prompts: fetching snapshot history")
     result = await mcp_client.call("snapshot_history", {})
     if "error" in result:
         log.warning("snapshot_history unavailable, using fallback prompts: %s",
                     result["error"])
         return {"prompts": build_suggested_prompts([])}
-    return {"prompts": build_suggested_prompts(result.get("snapshots", []))}
+    prompts = build_suggested_prompts(result.get("snapshots", []))
+    log.info("suggested_prompts: generated %d prompts", len(prompts))
+    return {"prompts": prompts}
 
 
 def _describe_anomaly(a: dict) -> str:
@@ -223,6 +256,17 @@ async def _session_opener() -> tuple[str, list[ToolCall]]:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest) -> ChatResponse:
+    # Resolve the model: use the per-request override if valid, otherwise default.
+    selected_model = GROQ_MODEL
+    if body.model:
+        if body.model in MODEL_IDS:
+            selected_model = body.model
+        else:
+            log.warning("unknown model %r, falling back to %s", body.model, GROQ_MODEL)
+
+    log.info("chat request: message=%r (len=%d), history=%d messages, model=%s",
+             body.message[:100], len(body.message), len(body.history), selected_model)
+
     # Built per request, not per process: a long-running server would otherwise
     # still think it is the day it booted.
     messages = [{"role": "system", "content": build_system_prompt()}]
@@ -236,23 +280,35 @@ async def chat(body: ChatRequest) -> ChatResponse:
     # there is no session id to track and no server-side state to keep.
     opener, opener_calls = ("", [])
     if not body.history:
+        log.info("new session: running anomaly check")
         opener, opener_calls = await _session_opener()
+        if opener:
+            log.info("anomaly opener: %s", opener[:100])
+        else:
+            log.info("anomaly check: no anomalies to report")
 
     async def ask(with_tools: bool):
         """One turn against Groq. Returns the completion, or raises if unreachable."""
-        kwargs = {"model": GROQ_MODEL, "messages": messages}
+        kwargs = {"model": selected_model, "messages": messages}
         if with_tools:
             kwargs["tools"] = mcp_client.openai_tool_specs()
+        log.info("asking Groq: model=%s, with_tools=%s, message_count=%d",
+                 selected_model, with_tools, len(messages))
         response = await client.chat.completions.create(**kwargs)
-        return response.choices[0].message
+        msg = response.choices[0].message
+        log.info("Groq replied: content_len=%d, tool_calls=%d",
+                 len(msg.content or ""), len(msg.tool_calls or []))
+        return msg
 
     try:
         used_all_rounds = True
-        for _ in range(MAX_TOOL_ROUNDS):
+        for round_num in range(1, MAX_TOOL_ROUNDS + 1):
+            log.info("tool loop round %d/%d", round_num, MAX_TOOL_ROUNDS)
             message = await ask(with_tools=True)
             messages.append(_assistant_message(message))
 
             if not message.tool_calls:
+                log.info("no tool calls in round %d, breaking", round_num)
                 used_all_rounds = False
                 break
 
@@ -261,8 +317,11 @@ async def chat(body: ChatRequest) -> ChatResponse:
                 # Groq/OpenAI send arguments as a JSON STRING, not a dict --
                 # parse them ourselves.
                 args = json.loads(call.function.arguments or "{}")
+                log.info("executing tool call: %s(%s)", name, args)
                 result = await mcp_client.call(name, args)
                 executed.append(ToolCall(name=name, arguments=args, result=result))
+                log.info("tool %s result: %s", name,
+                         "error" if "error" in result else "success")
 
                 # tool_call_id (not tool_name) is how OpenAI-compatible APIs
                 # line a tool result up with the call that requested it.
@@ -283,9 +342,9 @@ async def chat(body: ChatRequest) -> ChatResponse:
     except Exception as exc:
         log.exception("groq call failed")
         return ChatResponse(
-            answer=_join(opener, _groq_error_message(exc)),
+            answer=_join(opener, _groq_error_message(exc, selected_model)),
             tool_calls=opener_calls,
-            model=GROQ_MODEL,
+            model=selected_model,
         )
 
     answer = (messages[-1].get("content") or "").strip()
@@ -294,18 +353,21 @@ async def chat(body: ChatRequest) -> ChatResponse:
     # empty bubble, fall back to the grounded numbers themselves -- the data is
     # the point, the prose is decoration.
     if not answer and executed:
+        log.info("model produced no prose after %d tool calls; using fallback", len(executed))
         answer = _fallback_summary(executed)
 
+    log.info("chat response: answer_len=%d, tool_calls=%d",
+             len(answer), len(opener_calls) + len(executed))
     return ChatResponse(answer=_join(opener, answer),
                         tool_calls=opener_calls + executed,
-                        model=GROQ_MODEL)
+                        model=selected_model)
 
 
 def _join(opener: str, answer: str) -> str:
     return f"{opener}\n\n{answer}".strip() if opener else answer
 
 
-def _groq_error_message(exc: Exception) -> str:
+def _groq_error_message(exc: Exception, model: str | None = None) -> str:
     """Explain a failed Groq call in terms of what to actually check.
 
     The old text blamed connectivity and the API key for every failure, which is
@@ -314,11 +376,12 @@ def _groq_error_message(exc: Exception) -> str:
     reach Groq" is what made the annotations bug look like a config problem.
     """
     status = getattr(exc, "status_code", None)
+    model = model or GROQ_MODEL
 
     if status == 401:
         detail = "GROQ_API_KEY is missing or not valid."
     elif status == 404:
-        detail = f"Groq does not recognise the model `{GROQ_MODEL}`."
+        detail = f"Groq does not recognise the model `{model}`."
     elif status == 429:
         detail = "Groq is rate-limiting this key. Try again shortly."
     elif status == 400:

@@ -31,6 +31,9 @@ warehouse/
 Thumbs.db
 desktop.ini
 
+# Logs
+server.log
+
 # IDE
 .vscode/settings.json
 .idea/

@@ -16,6 +16,7 @@ THE WEEK KEY IS (iso_year, iso_week). Never (year, iso_week) -- see sql/views.sq
 """
 
 import datetime as dt
+import logging
 import os
 import re
 import sys
@@ -26,6 +27,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent.lakehouse import LakehouseError, ScanStats, Snapshot, lakehouse
+
+log = logging.getLogger("agent.metrics")
 
 FUNNEL_STAGES = ("visit", "lead", "opportunity")
 FACT_FUNNEL, FACT_ORDERS, DIM_DATE = "fact_funnel_event", "fact_orders", "dim_date"
@@ -156,6 +159,7 @@ def latest_complete_week() -> Week:
     that is usually a partial week, and comparing a 2-day stub against a full week
     year-over-year produces a fake collapse.
     """
+    log.info("resolving latest complete week from dim_date")
     df = lakehouse.query(
         """
         SELECT iso_year, iso_week, MIN(week_start_date) AS week_start_date
@@ -170,13 +174,17 @@ def latest_complete_week() -> Week:
     if df.empty:
         raise MetricError("dim_date contains no complete ISO week.")
     r = df.iloc[0]
-    return Week(int(r.iso_year), int(r.iso_week), _as_date(r.week_start_date))
+    week = Week(int(r.iso_year), int(r.iso_week), _as_date(r.week_start_date))
+    log.info("latest complete week: %s (start=%s)", week.label, week.week_start_date)
+    return week
 
 
 def resolve_week(iso_year: int | None = None, iso_week: int | None = None) -> Week:
     """Resolve an explicit week, or fall back to the latest complete one."""
     if iso_year is None or iso_week is None:
+        log.info("resolve_week: no explicit week, falling back to latest complete")
         return latest_complete_week()
+    log.info("resolve_week: looking up %d-W%02d", iso_year, iso_week)
     if not 1 <= int(iso_week) <= 53:
         raise MetricError(f"iso_week must be 1-53, got {iso_week}.")
     df = lakehouse.query(
@@ -189,7 +197,9 @@ def resolve_week(iso_year: int | None = None, iso_week: int | None = None) -> We
     if ws is None or str(ws) == "NaT":
         raise MetricError(
             f"ISO week {iso_year}-W{int(iso_week):02d} is not in the loaded date range.")
-    return Week(int(iso_year), int(iso_week), _as_date(ws))
+    week = Week(int(iso_year), int(iso_week), _as_date(ws))
+    log.info("resolve_week: resolved to %s (start=%s)", week.label, week.week_start_date)
+    return week
 
 
 # --- Tools ------------------------------------------------------------------
@@ -205,9 +215,11 @@ def funnel_yoy(stage: str, iso_year: int | None = None,
     not LAG() over the year ordering, which returns the previous year *present*
     and will happily compare 2026 against 2024 when a week is missing.
     """
+    log.info("funnel_yoy: stage=%s, iso_year=%s, iso_week=%s", stage, iso_year, iso_week)
     stage = _validate_stage(stage)
     week = resolve_week(iso_year, iso_week)
     snapshot = lakehouse.snapshot(FACT_FUNNEL)
+    log.info("funnel_yoy: querying %s for %s vs %s", stage, week.label, f"{week.iso_year - 1}-W{week.iso_week:02d}")
 
     df = lakehouse.query(
         f"""
@@ -235,6 +247,8 @@ def funnel_yoy(stage: str, iso_year: int | None = None,
     # A missing prior year is not a 0% change and not a 100% rise. It is unknown,
     # and saying so is the entire point of this system.
     yoy_pct = None if not prior else round(100.0 * (current - prior) / prior, 1)
+    log.info("funnel_yoy: %s %s current=%d, prior=%d, yoy_pct=%s",
+             stage, week.label, current, prior, yoy_pct)
 
     return {
         "metric": "funnel_yoy",
@@ -266,7 +280,9 @@ def funnel_yoy(stage: str, iso_year: int | None = None,
 def funnel_snapshot(iso_year: int | None = None, iso_week: int | None = None) -> dict:
     """The whole funnel for one week: visit -> lead -> opportunity -> order,
     with stage-to-stage conversion and drop-off."""
+    log.info("funnel_snapshot: iso_year=%s, iso_week=%s", iso_year, iso_week)
     week = resolve_week(iso_year, iso_week)
+    log.info("funnel_snapshot: querying %s", week.label)
     df = lakehouse.query(
         f"""
         WITH weekly AS ({WEEKLY_FUNNEL_CTE}), o AS ({WEEKLY_ORDERS_CTE})
@@ -288,6 +304,8 @@ def funnel_snapshot(iso_year: int | None = None, iso_week: int | None = None) ->
     r = df.iloc[0]
     visits, leads = int(r.visits or 0), int(r.leads or 0)
     opps, orders = int(r.opportunities or 0), int(r.orders or 0)
+    log.info("funnel_snapshot: %s visits=%d, leads=%d, opps=%d, orders=%d",
+             week.label, visits, leads, opps, orders)
 
     if visits == 0:
         raise MetricError(f"No funnel events recorded for {week.label}.")
@@ -324,6 +342,7 @@ def weekly_trend(measure: str = "lead", weeks: int = 12) -> dict:
     measure: a funnel stage (visit/lead/opportunity), or 'orders' / 'revenue'.
     """
     weeks = max(1, min(int(weeks), MAX_TOOL_ROWS))
+    log.info("weekly_trend: measure=%s, weeks=%d", measure, weeks)
 
     if measure in FUNNEL_STAGES:
         source, tables = FACT_FUNNEL, [FACT_FUNNEL, DIM_DATE]
@@ -364,6 +383,7 @@ def weekly_trend(measure: str = "lead", weeks: int = 12) -> dict:
             f"{', '.join(FUNNEL_STAGES)}, orders, revenue.")
 
     df = lakehouse.query(sql, arrow, params).sort_values(["iso_year", "iso_week"])
+    log.info("weekly_trend: query returned %d rows", len(df))
 
     points = []
     for r in df.itertuples():
@@ -405,6 +425,7 @@ def running_total(measure: "str | list[str]" = "orders", period: str = "mtd",
     plausible-looking numbers rather than admit the call failed. Answering the
     question the user actually asked removes the failure mode at its source.
     """
+    log.info("running_total: measure=%s, period=%s, year=%s", measure, period, year)
     if isinstance(measure, list):
         unique = list(dict.fromkeys(measure))       # dedupe, keep the model's order
         if not unique:
@@ -498,6 +519,7 @@ def _running_total_one(measure: str = "orders", period: str = "mtd",
     would silently be answered with data from the latest year instead -- a wrong
     number reported confidently, which is worse than an error.
     """
+    log.info("_running_total_one: measure=%s, period=%s, year=%s", measure, period, year)
     period = (period or "mtd").strip().lower()
     partitions = {
         "wtd": "d.iso_year, d.iso_week",  # ISO calendar for the weekly grain
@@ -598,6 +620,8 @@ def top_dimension(dimension: str = "channel", measure: str = "orders",
                   limit: int = 5) -> dict:
     """Rank channels, products, regions or segments by orders, revenue or
     average deal size for a week."""
+    log.info("top_dimension: dimension=%s, measure=%s, iso_year=%s, iso_week=%s, limit=%d",
+             dimension, measure, iso_year, iso_week, limit)
     limit = max(1, min(int(limit), 50))
     if dimension not in _DIMENSIONS:
         raise MetricError(f"dimension must be one of "
@@ -658,6 +682,7 @@ def compare_as_of(as_of_date: str, stage: str = "lead") -> dict:
     X gives the latter, which is what someone auditing a number they saw that day
     actually means.
     """
+    log.info("compare_as_of: as_of_date=%s, stage=%s", as_of_date, stage)
     stage = _validate_stage(stage)
     target = _parse_as_of(as_of_date)
 
@@ -670,6 +695,8 @@ def compare_as_of(as_of_date: str, stage: str = "lead") -> dict:
         raise MetricError(str(exc)) from exc
 
     current = lakehouse.snapshot(FACT_FUNNEL)
+    log.info("compare_as_of: historical snapshot=%s, current snapshot=%s",
+             historical.snapshot_id, current.snapshot_id)
 
     def count_at(snapshot_id: int | None) -> int:
         df = lakehouse.query(
@@ -711,6 +738,7 @@ def explain_scan(iso_year: int | None = None, iso_week: int | None = None) -> di
     Counting planned files with and without it proves Iceberg used manifest
     statistics to eliminate files WITHOUT opening them.
     """
+    log.info("explain_scan: iso_year=%s, iso_week=%s", iso_year, iso_week)
     week = resolve_week(iso_year, iso_week)
     start = week.week_start_date
     end = start + dt.timedelta(days=7)
@@ -743,9 +771,11 @@ def explain_scan(iso_year: int | None = None, iso_week: int | None = None) -> di
 
 def snapshot_history() -> dict:
     """Every snapshot of the funnel fact -- the audit trail behind any number."""
+    log.info("snapshot_history: retrieving snapshot history for %s", FACT_FUNNEL)
     history = lakehouse.history(FACT_FUNNEL)
     if not history:
         raise MetricError(f"{FACT_FUNNEL} has no Iceberg snapshots.")
+    log.info("snapshot_history: found %d snapshots", len(history))
 
     # This tool IS the audit trail, so a provenance envelope is arguably circular
     # -- but dispatch() enforces provenance on every tool without exception, and
@@ -788,6 +818,8 @@ def period_compare(measure: str = "revenue", grain: str = "month",
     collapse, and a period outside the data entirely reports as unknown rather
     than as zero.
     """
+    log.info("period_compare: measure=%s, grain=%s, current=%s, previous=%s",
+             measure, grain, current, previous)
     grain = (grain or "month").strip().lower()
     if grain not in _GRAINS:
         raise MetricError(f"grain must be one of {', '.join(_GRAINS)} -- got {grain!r}.")
@@ -925,6 +957,7 @@ def daily_trend(measure: str = "lead", days: int = 30) -> dict:
     alarming answer than "the data stops on the 3rd".
     """
     days = max(1, min(int(days), MAX_TOOL_ROWS))
+    log.info("daily_trend: measure=%s, days=%d", measure, days)
     source, fact, agg, stage = _measure_source(measure)
     stage_filter = "AND f.stage = ?" if stage else ""
     params: list = [stage] if stage else []
@@ -990,9 +1023,11 @@ def funnel_anomalies(threshold_pct: float | None = None) -> dict:
     """
     threshold = abs(float(ANOMALY_THRESHOLD_PCT if threshold_pct is None
                           else threshold_pct))
+    log.info("funnel_anomalies: threshold=%s%%", threshold)
 
     current_week = latest_complete_week()
     prior_week = _week_containing(current_week.week_start_date - dt.timedelta(days=7))
+    log.info("funnel_anomalies: comparing %s vs %s", current_week.label, prior_week.label)
     current = funnel_snapshot(current_week.iso_year, current_week.iso_week)
     prior = funnel_snapshot(prior_week.iso_year, prior_week.iso_week)
 
@@ -1024,6 +1059,10 @@ def funnel_anomalies(threshold_pct: float | None = None) -> dict:
             })
 
     anomalies.sort(key=lambda a: a["change_pct"])       # steepest drop first
+    log.info("funnel_anomalies: found %d anomalies", len(anomalies))
+    for a in anomalies:
+        log.info("funnel_anomalies: %s %.1f%% (%s -> %s)",
+                 a["label"], a["change_pct"], a["previous"], a["current"])
 
     return {
         "metric": "funnel_anomalies",
@@ -1051,6 +1090,7 @@ def _week_containing(day: dt.date) -> Week:
     calendar table does not cover raises here, rather than producing a week key
     that silently matches no rows.
     """
+    log.debug("_week_containing: looking up week for %s", day)
     df = lakehouse.query(
         "SELECT iso_year, iso_week, MIN(week_start_date) AS ws FROM dim_date "
         "WHERE date = ? GROUP BY iso_year, iso_week",

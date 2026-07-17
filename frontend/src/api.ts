@@ -25,11 +25,18 @@ export interface Message {
   toolCalls?: ToolCall[];
 }
 
+export interface ModelInfo {
+  id: string;
+  name: string;
+  note: string;
+}
+
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export async function sendChat(
   message: string,
   history: Message[],
+  model?: string,
 ): Promise<ChatResponse> {
   const res = await fetch(`${API}/chat`, {
     method: "POST",
@@ -39,6 +46,7 @@ export async function sendChat(
       // The backend re-attaches its own system prompt, so only the plain
       // conversation turns are sent. Tool calls stay client-side for display.
       history: history.map(({ role, content }) => ({ role, content })),
+      ...(model ? { model } : {}),
     }),
   });
 
@@ -53,4 +61,10 @@ export async function fetchSuggestedPrompts(): Promise<string[]> {
   if (!res.ok) return [];
   const data = await res.json();
   return data.prompts ?? [];
+}
+
+export async function fetchModels(): Promise<{ models: ModelInfo[]; default: string }> {
+  const res = await fetch(`${API}/models`);
+  if (!res.ok) return { models: [], default: "" };
+  return res.json();
 }

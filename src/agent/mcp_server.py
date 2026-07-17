@@ -34,10 +34,17 @@ from agent.tools import TOOLS, dispatch
 
 # MCP speaks JSON-RPC on stdout. Anything else printed there corrupts the
 # protocol stream, so logs MUST go to stderr.`
+_LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+_LOG_DATEFMT = "%H:%M:%S"
+_LOG_FILE = Path(__file__).resolve().parents[2] / "server.log"
+
 logging.basicConfig(
     level=logging.INFO, stream=sys.stderr,
-    format="%(asctime)s %(levelname)-7s %(name)s | %(message)s", datefmt="%H:%M:%S",
+    format=_LOG_FORMAT, datefmt=_LOG_DATEFMT,
 )
+_file_handler = logging.FileHandler(_LOG_FILE, mode="a", encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT))
+logging.getLogger().addHandler(_file_handler)
 log = logging.getLogger("mcp_server")
 
 server = Server("funnel-lakehouse")
@@ -47,6 +54,8 @@ server = Server("funnel-lakehouse")
 async def list_tools() -> list[types.Tool]:
     """Advertise the metric tools. Built from the same registry the HTTP backend
     uses, so the two can never disagree about what exists."""
+    log.info("list_tools: advertising %d tools: %s",
+             len(TOOLS), ", ".join(t.name for t in TOOLS))
     return [
         types.Tool(name=t.name, description=t.description, inputSchema=t.parameters)
         for t in TOOLS
@@ -77,12 +86,15 @@ async def call_tool(name: str, arguments: dict | None) -> list[types.TextContent
     by the SDK into a plain-text error block, which breaks the JSON contract the
     client depends on. A failure is still a JSON object here.
     """
+    log.info("call_tool: %s(%s)", name, arguments or {})
     try:
         result = await asyncio.to_thread(dispatch, name, arguments or {})
     except Exception as exc:
         log.exception("dispatch raised for %s", name)
         result = {"error": f"{name} failed: {exc}", "tool": name}
 
+    has_error = "error" in result
+    log.info("call_tool: %s completed%s", name, f" (ERROR: {result.get('error', '')})" if has_error else "")
     return [types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
 
 

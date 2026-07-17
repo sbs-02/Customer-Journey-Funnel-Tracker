@@ -383,12 +383,15 @@ def dispatch(name: str, arguments: dict[str, Any]) -> dict:
     structured error rather than raising, so the model can apologise usefully
     instead of the request 500-ing.
     """
+    log.info("dispatch: tool=%s, args=%s", name, arguments)
     tool = TOOLS_BY_NAME.get(name)
     if tool is None:
+        log.warning("dispatch: unknown tool %r", name)
         return {"error": f"Unknown tool {name!r}. "
                          f"Available: {', '.join(TOOLS_BY_NAME)}"}
 
     cleaned = coerce_arguments(tool, arguments)
+    log.debug("dispatch: %s cleaned args=%s", name, cleaned)
 
     invalid = validate_arguments(tool, cleaned)
     if invalid is not None:
@@ -420,7 +423,10 @@ def dispatch(name: str, arguments: dict[str, Any]) -> dict:
     # Guardrail: a numeric answer without receipts is exactly what the brief
     # forbids. Fail loudly rather than let an unsourced number reach the model.
     if "provenance" not in result:
+        log.error("tool %s returned no provenance!", name)
         raise RuntimeError(
             f"Tool {name} returned no provenance. Every numeric result must carry "
             "snapshot id, as-of date, date range and source tables.")
+    log.info("dispatch: %s completed successfully (snapshot=%s)",
+             name, result["provenance"].get("snapshot_id", "unknown"))
     return result

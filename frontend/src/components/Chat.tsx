@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 
-import { sendChat, fetchSuggestedPrompts, type Message } from "../api";
+import { sendChat, fetchSuggestedPrompts, fetchModels, type Message, type ModelInfo } from "../api";
 import { ProvenanceCard } from "./ProvenanceCard";
 
 // Wide result tables shouldn't break the layout on a phone; give every table
@@ -37,14 +37,22 @@ export function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [suggested, setSuggested] = useState<string[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const endRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { fetchSuggestedPrompts().then(setSuggested); }, []);
+  useEffect(() => {
+    fetchModels().then((data) => {
+      setModels(data.models);
+      setSelectedModel(data.default);
+    });
+  }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const mutation = useMutation({
-    mutationFn: (text: string) => sendChat(text, messages),
+    mutationFn: (text: string) => sendChat(text, messages, selectedModel || undefined),
     onSuccess: (data) => {
       setMessages((prev) => [
         ...prev,
@@ -86,6 +94,23 @@ export function Chat() {
           <h1 className="chat__title">Funnel Analyst</h1>
           <span className="chat__source">Customer journey data · Iceberg lakehouse</span>
         </span>
+        {models.length > 1 && (
+          <label className="model-select">
+            <span className="model-select__label">Model</span>
+            <select
+              className="model-select__field"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              disabled={mutation.isPending}
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </header>
 
       <div className="chat__log" role="log" aria-live="polite">

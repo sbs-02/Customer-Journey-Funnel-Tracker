@@ -78,6 +78,48 @@
   text-overflow: ellipsis;
 }
 
+/* ── Model selector ─────────────────────────────────────────────────── */
+.model-select {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+}
+.model-select__label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.model-select__field {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+  transition: border-color var(--fast) var(--ease),
+              box-shadow var(--fast) var(--ease);
+  appearance: auto;
+}
+.model-select__field:hover {
+  border-color: var(--accent-line);
+}
+.model-select__field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-wash);
+}
+.model-select__field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Log / scroll region ────────────────────────────────────────────── */
 .chat__log {
   flex: 1;

@@ -85,6 +85,7 @@ def _resolve_warehouse() -> Path:
     default = (ROOT / "warehouse").resolve()
 
     if not raw:
+        log.info("_resolve_warehouse: no ICEBERG_WAREHOUSE set, using default %s", default)
         return default
 
     if os.name != "nt" and _WINDOWS_DRIVE.match(raw):
@@ -96,7 +97,9 @@ def _resolve_warehouse() -> Path:
         return default
 
     path = Path(raw)
-    return path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+    resolved = path.resolve() if path.is_absolute() else (ROOT / path).resolve()
+    log.info("_resolve_warehouse: ICEBERG_WAREHOUSE=%s resolved to %s", raw, resolved)
+    return resolved
 
 
 WAREHOUSE = _resolve_warehouse()
@@ -146,6 +149,7 @@ class ScanStats:
 
 def _metadata_file(table_name: str) -> Path:
     """Resolve a Hadoop-catalog table's current metadata JSON."""
+    log.debug("_metadata_file: resolving metadata for table %s", table_name)
     metadata_dir = WAREHOUSE / NAMESPACE / table_name / "metadata"
     if not metadata_dir.is_dir():
         raise LakehouseError(
@@ -156,6 +160,7 @@ def _metadata_file(table_name: str) -> Path:
     if hint.exists():
         candidate = metadata_dir / f"v{hint.read_text().strip()}.metadata.json"
         if candidate.exists():
+            log.debug("_metadata_file: found %s", candidate)
             return candidate
 
     # Fallback for an interrupted write that left no hint file.
@@ -163,6 +168,7 @@ def _metadata_file(table_name: str) -> Path:
                       key=lambda p: int(p.stem.lstrip("v").split(".")[0]))
     if not versions:
         raise LakehouseError(f"No vN.metadata.json under {metadata_dir}")
+    log.debug("_metadata_file: fallback to %s", versions[-1])
     return versions[-1]
 
 
@@ -180,7 +186,11 @@ class Lakehouse:
 
     def table(self, name: str) -> StaticTable:
         if name not in self._tables:
+            log.info("loading table %s from Iceberg metadata", name)
             self._tables[name] = StaticTable.from_metadata(_metadata_file(name).resolve().as_uri())
+            log.info("table %s loaded successfully", name)
+        else:
+            log.debug("table %s served from cache", name)
         return self._tables[name]
 
     def _wrap(self, snap) -> Snapshot:
@@ -198,6 +208,9 @@ class Lakehouse:
             snap = table.current_snapshot()
             if snap is None:
                 raise LakehouseError(f"Table {name} has no snapshots -- it is empty.")
+            log.info("table %s: current snapshot is %s (committed %s)",
+                     name, snap.snapshot_id,
+                     dt.datetime.fromtimestamp(snap.timestamp_ms / 1000, dt.timezone.utc).isoformat())
         else:
             snap = next((s for s in table.metadata.snapshots
                          if s.snapshot_id == snapshot_id), None)
@@ -205,12 +218,16 @@ class Lakehouse:
                 available = [s.snapshot_id for s in table.metadata.snapshots]
                 raise LakehouseError(
                     f"Snapshot {snapshot_id} not found on {name}. Available: {available}")
+            log.info("table %s: resolved snapshot %s", name, snapshot_id)
         return self._wrap(snap)
 
     def history(self, name: str) -> list[Snapshot]:
         """Every snapshot, oldest first -- the menu for 'as of date X' questions."""
-        return sorted((self._wrap(s) for s in self.table(name).metadata.snapshots),
-                      key=lambda s: s.committed_at)
+        log.info("table %s: retrieving snapshot history", name)
+        result = sorted((self._wrap(s) for s in self.table(name).metadata.snapshots),
+                        key=lambda s: s.committed_at)
+        log.info("table %s: found %d snapshots", name, len(result))
+        return result
 
     def snapshot_as_of(self, name: str, as_of: dt.date | dt.datetime) -> Snapshot:
         """Latest snapshot committed at or before `as_of` -- Iceberg time travel.
@@ -244,31 +261,45 @@ class Lakehouse:
                 f"snapshots run from {history[0].committed_at.isoformat()} to "
                 f"{history[-1].committed_at.isoformat()} -- pick a moment inside "
                 f"that range.")
+        log.info("table %s: time-travel to %s resolved to snapshot %s (committed %s)",
+                 name, as_of, eligible[-1].snapshot_id, eligible[-1].committed_at.isoformat())
         return eligible[-1]
 
     def arrow(self, name: str, snapshot_id: int | None = None) -> pa.Table:
         key = (name, snapshot_id)
         if key not in self._arrow:
+            log.info("loading Arrow table for %s (snapshot=%s)", name, snapshot_id or "latest")
             table = self.table(name)
             scan = table.scan(snapshot_id=snapshot_id) if snapshot_id else table.scan()
             self._arrow[key] = scan.to_arrow()
+            log.info("Arrow table for %s loaded: %d rows", name, len(self._arrow[key]))
+        else:
+            log.debug("Arrow table for %s served from cache (%d rows)", name, len(self._arrow[key]))
         return self._arrow[key]
 
     def scan_stats(self, name: str, row_filter: str = "") -> ScanStats:
         """Count data files with and without a predicate -- the real pruning proof."""
+        log.info("scan_stats: computing file counts for %s (filter=%r)", name, row_filter)
         table = self.table(name)
         total = len(list(table.scan().plan_files()))
         scanned = (len(list(table.scan(row_filter=row_filter).plan_files()))
                    if row_filter else total)
-        return ScanStats(files_total=total, files_scanned=scanned)
+        stats = ScanStats(files_total=total, files_scanned=scanned)
+        log.info("scan_stats: %s total=%d scanned=%d skipped=%d",
+                 name, stats.files_total, stats.files_scanned, stats.files_skipped)
+        return stats
 
     def query(self, sql: str, tables: dict[str, pa.Table], params: list | None = None):
         """Run DuckDB SQL over Arrow tables read from Iceberg (zero-copy)."""
+        log.debug("query: registering %d Arrow tables: %s", len(tables), ", ".join(tables.keys()))
         con = duckdb.connect()
         try:
             for alias, arrow_table in tables.items():
                 con.register(alias, arrow_table)
-            return con.execute(sql, params or []).fetchdf()
+            log.debug("query: executing SQL (%d chars), params=%s", len(sql), params)
+            result = con.execute(sql, params or []).fetchdf()
+            log.info("query: returned %d rows, %d cols", len(result), len(result.columns))
+            return result
         finally:
             con.close()
 

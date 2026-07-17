@@ -32,6 +32,7 @@ class MCPClient:
         self._tools: list = []
 
     async def start(self) -> None:
+        log.info("starting MCP server subprocess: %s %s", sys.executable, SERVER_SCRIPT)
         self._stack = AsyncExitStack()
         # env/cwd are both explicit on purpose.
         #
@@ -55,11 +56,14 @@ class MCPClient:
         self._session = await self._stack.enter_async_context(ClientSession(read, write))
         await self._session.initialize()
         self._tools = (await self._session.list_tools()).tools
-        log.info("connected to MCP server, %d tools", len(self._tools))
+        log.info("connected to MCP server, %d tools: %s",
+                 len(self._tools), ", ".join(t.name for t in self._tools))
 
     async def stop(self) -> None:
+        log.info("shutting down MCP client")
         if self._stack:
             await self._stack.aclose()
+        log.info("MCP client stopped")
 
     @property
     def tool_names(self) -> list[str]:
@@ -83,7 +87,9 @@ class MCPClient:
     async def call(self, name: str, arguments: dict) -> dict:
         """Invoke a tool over MCP and unwrap its JSON payload."""
         if self._session is None:
+            log.error("MCP call attempted before session started: %s", name)
             return {"error": "MCP session is not started."}
+        log.info("MCP call: %s(%s)", name, arguments)
         try:
             result = await self._session.call_tool(name, arguments)
         except Exception as exc:
@@ -93,7 +99,12 @@ class MCPClient:
         for block in result.content:
             if block.type == "text":
                 try:
-                    return json.loads(block.text)
+                    parsed = json.loads(block.text)
+                    has_error = "error" in parsed
+                    log.info("MCP call %s completed%s: %s",
+                             name, " (ERROR)" if has_error else "",
+                             parsed.get("error", "") if has_error else f"{len(block.text)} chars")
+                    return parsed
                 except json.JSONDecodeError:
                     # The server should always send JSON, but the MCP SDK itself
                     # emits bare text for protocol-level failures (input
@@ -103,4 +114,5 @@ class MCPClient:
                     log.error("non-JSON from tool %s: %s", name, block.text)
                     return {"error": block.text.strip() or "MCP returned non-JSON",
                             "tool": name}
+        log.warning("MCP call %s returned no content blocks", name)
         return {"error": "MCP returned no content", "tool": name}
